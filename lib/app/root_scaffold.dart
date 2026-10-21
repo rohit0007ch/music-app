@@ -91,10 +91,7 @@ class _RootScaffoldState extends State<RootScaffold> {
               playerState: _playerState,
               onTrackTap: (track) => _onTrackTap(track),
             ),
-            DiscoverScreen(
-              playerState: _playerState,
-              onTrackTap: (track) => _onTrackTap(track),
-            ),
+            DiscoverScreen(playerState: _playerState, onTrackTap: _onTrackTap),
             LibraryScreen(
               playerState: _playerState,
               libraryState: _libraryState,

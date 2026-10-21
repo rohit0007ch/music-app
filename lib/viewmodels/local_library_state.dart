@@ -12,15 +12,21 @@ class LocalLibraryState extends ChangeNotifier {
   List<Track> _songs = const [];
   bool _loading = false;
   bool _permissionGranted = false;
+  bool _permissionPermanentlyDenied = false;
   bool _loadedOnce = false;
   String? _error;
 
   List<Track> get songs => List.unmodifiable(_songs);
   bool get loading => _loading;
   bool get permissionGranted => _permissionGranted;
+  bool get permissionPermanentlyDenied => _permissionPermanentlyDenied;
   bool get loadedOnce => _loadedOnce;
   String? get error => _error;
   bool get hasSongs => _songs.isNotEmpty;
+
+  /// True when a scan failed after permission was granted.
+  bool get hasLoadError =>
+      _permissionGranted && _error != null && _songs.isEmpty;
 
   /// Requests permission (if needed) and loads songs.
   Future<void> load({bool requestPermission = true}) async {
@@ -30,23 +36,38 @@ class LocalLibraryState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      if (requestPermission) {
-        _permissionGranted = await _service.ensurePermission();
-      } else {
-        _permissionGranted = await _service.hasPermission();
-      }
+      final status = requestPermission
+          ? await _service.ensurePermission()
+          : await _service.permissionStatus();
+
+      _permissionGranted = status == LocalLibraryPermission.granted;
+      _permissionPermanentlyDenied =
+          status == LocalLibraryPermission.permanentlyDenied;
 
       if (!_permissionGranted) {
         _songs = const [];
-        _error = 'Music library permission is required to play local tracks.';
+        _error = _permissionPermanentlyDenied
+            ? 'Music access is turned off. Enable it in Settings to play '
+                  'songs stored on this device.'
+            : 'Music library permission is required to play local tracks.';
         return;
       }
 
       _songs = await _service.loadSongs();
+      _error = null;
     } catch (e) {
-      // MissingPluginException in unit tests / unsupported platforms.
-      _error = e.toString();
-      _permissionGranted = false;
+      // Keep permissionGranted if we already obtained it — show a retryable
+      // load error instead of bouncing the user back to the allow-access UI.
+      if (e is LocalLibraryException) {
+        _error = e.message;
+        final detail = e.debugDetail;
+        if (detail != null && detail.isNotEmpty) {
+          debugPrint('LocalLibraryState scan failed: $detail');
+        }
+      } else {
+        _error = 'Could not load local songs. Please try again.';
+        debugPrint('LocalLibraryState scan failed: $e');
+      }
       _songs = const [];
     } finally {
       _loading = false;
@@ -54,4 +75,7 @@ class LocalLibraryState extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// Opens the system Settings app when permission was permanently denied.
+  Future<bool> openSettings() => _service.openSystemSettings();
 }

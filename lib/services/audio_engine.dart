@@ -6,11 +6,11 @@ import 'package:melora_music/data/models/track.dart';
 /// Thin wrapper around [AudioPlayer] from `just_audio`.
 ///
 /// Responsibilities:
-/// - Converts a [Track] to an [AudioSource] (local URI or content URI).
-/// - Refuses to load [TrackSource.mock] tracks — callers must check
-///   [Track.isPlayable] and show the appropriate UI state instead.
+/// - Resolves [Track.playbackUri] (local file/content URI or online HTTPS).
+/// - Refuses mock / non-playable tracks and malformed URIs before touching
+///   `just_audio`.
 /// - Configures [AudioSession] for music playback on first use.
-/// - Exposes raw streams so [PlayerState] can derive its own UI state.
+/// - Exposes raw streams so [MeloraPlayerState] can derive UI state.
 ///
 /// This class has no UI knowledge and is tested independently.
 class AudioEngine {
@@ -29,19 +29,18 @@ class AudioEngine {
 
   // ── Playback commands ─────────────────────────────────────────────────────
 
-  /// Loads and plays [track].
+  /// Loads and plays [track] via [Track.playbackUri].
   ///
-  /// Throws [ArgumentError] if [track.isPlayable] is false — callers must
-  /// never attempt to load a mock track into the audio engine.
+  /// Throws [ArgumentError] or [FormatException] if the track cannot be played
+  /// (mock, missing URI, wrong scheme for source). Callers must not invoke
+  /// this for demo tracks.
   Future<void> play(Track track) async {
-    if (!track.isPlayable) {
-      throw ArgumentError(
-        'AudioEngine.play() called with a non-playable track '
-        '"${track.title}". Show demo-unavailable UI instead.',
-      );
-    }
+    // Validate before any async player work so failures stay synchronous and
+    // do not leave just_audio mid-load.
+    final uri = resolvePlaybackUri(track);
+
     await _ensureSessionConfigured();
-    final source = _toAudioSource(track);
+    final source = _toAudioSource(track, uri);
     await _player.setAudioSource(source);
     await _player.play();
   }
@@ -56,6 +55,61 @@ class AudioEngine {
 
   void dispose() => _player.dispose();
 
+  // ── URI resolution (testable without a live player) ───────────────────────
+
+  /// Resolves and validates the URI that `just_audio` should open.
+  ///
+  /// - [TrackSource.online] → http(s) [Track.streamUrl]
+  /// - [TrackSource.local] → non-http(s) [Track.localUri] (content/file/…)
+  /// - [TrackSource.mock] → always rejected
+  static Uri resolvePlaybackUri(Track track) {
+    if (track.source == TrackSource.mock) {
+      throw ArgumentError(
+        'AudioEngine cannot load mock track "${track.title}". '
+        'Show demo-unavailable UI instead.',
+      );
+    }
+
+    final raw = track.playbackUri;
+    if (raw == null) {
+      throw ArgumentError(
+        'Track "${track.title}" (${track.source.name}) has no playback URI.',
+      );
+    }
+
+    final uri = Uri.tryParse(raw);
+    if (uri == null || uri.scheme.isEmpty) {
+      throw FormatException('Malformed playback URI: $raw');
+    }
+
+    switch (track.source) {
+      case TrackSource.online:
+        if (uri.scheme != 'http' && uri.scheme != 'https') {
+          throw ArgumentError(
+            'Online track "${track.title}" requires an http(s) stream URL, '
+            'got scheme "${uri.scheme}".',
+          );
+        }
+        if (uri.host.isEmpty) {
+          throw FormatException('Online stream URI is missing a host: $raw');
+        }
+      case TrackSource.local:
+        if (uri.scheme == 'http' || uri.scheme == 'https') {
+          throw ArgumentError(
+            'Local track "${track.title}" must use a file/content URI, '
+            'not http(s). Put remote audio in streamUrl with '
+            'TrackSource.online.',
+          );
+        }
+      case TrackSource.mock:
+        throw ArgumentError(
+          'AudioEngine cannot load mock track "${track.title}".',
+        );
+    }
+
+    return uri;
+  }
+
   // ── Internal ──────────────────────────────────────────────────────────────
 
   Future<void> _ensureSessionConfigured() async {
@@ -65,14 +119,8 @@ class AudioEngine {
     _sessionConfigured = true;
   }
 
-  /// Converts a playable [Track] to a [just_audio_background] [AudioSource].
-  ///
-  /// The [MediaItem] tag is picked up by `just_audio_background` to populate
-  /// the Android notification and iOS lock-screen / Control Center.
-  AudioSource _toAudioSource(Track track) {
-    assert(track.isPlayable, 'Only playable tracks reach _toAudioSource');
-    assert(track.localUri != null, 'Playable track must have a localUri');
-
+  /// Builds a tagged [AudioSource] for notification / lock-screen metadata.
+  AudioSource _toAudioSource(Track track, Uri uri) {
     final tag = MediaItem(
       id: track.id,
       title: track.title,
@@ -82,6 +130,6 @@ class AudioEngine {
       artUri: track.artworkUri != null ? Uri.tryParse(track.artworkUri!) : null,
     );
 
-    return AudioSource.uri(Uri.parse(track.localUri!), tag: tag);
+    return AudioSource.uri(uri, tag: tag);
   }
 }

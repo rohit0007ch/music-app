@@ -26,6 +26,7 @@ dependencies:
 
   # Runtime permissions — READ_MEDIA_AUDIO (Android 13+), mediaLibrary (iOS).
   permission_handler: ^11.3.1
+  http: ^1.2.0
 
 dev_dependencies:
   flutter_test:

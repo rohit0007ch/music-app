@@ -41,6 +41,7 @@ class MeloraTrackTile extends StatelessWidget {
                   paletteIndex: track.paletteIndex,
                   size: 52,
                   borderRadius: AppSpacing.radiusSm,
+                  imageUrl: track.artworkUri,
                 ),
                 if (isPlaying)
                   Positioned.fill(

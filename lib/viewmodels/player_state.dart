@@ -21,7 +21,7 @@ enum RepeatMode { none, all, one }
 /// a playable track is current leaves that track alone and surfaces
 /// [demoNotPlayableMessage] for the UI.
 class MeloraPlayerState extends ChangeNotifier {
-  MeloraPlayerState() : _engine = AudioEngine() {
+  MeloraPlayerState({AudioEngine? engine}) : _engine = engine ?? AudioEngine() {
     _queue = List<Track>.from(MockData.tracks);
     _subscribeToEngine();
   }
@@ -121,12 +121,19 @@ class MeloraPlayerState extends ChangeNotifier {
     _userMessage = null;
     _error = null;
     _currentTrack = track;
+    // Snapshot queue identity so a failed load cannot be confused with a
+    // queue mutation (play must not alter [_queue] on error).
+    final queueLengthBefore = _queue.length;
 
     try {
       await _engine.play(track);
     } catch (e) {
       _error = e.toString();
       _isPlaying = false;
+      _progress = 0.0;
+      // Keep [_currentTrack] as the attempted track so the UI can show the
+      // error; never roll the queue back except to assert stability.
+      assert(_queue.length == queueLengthBefore);
       notifyListeners();
       return false;
     }

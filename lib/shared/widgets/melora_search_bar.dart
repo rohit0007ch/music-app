@@ -8,11 +8,13 @@ class MeloraSearchBar extends StatelessWidget {
     super.key,
     required this.controller,
     this.onChanged,
+    this.onSubmitted,
     this.hintText = 'Search tracks, artists, albums…',
   });
 
   final TextEditingController controller;
   final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
   final String hintText;
 
   @override
@@ -27,6 +29,8 @@ class MeloraSearchBar extends StatelessWidget {
       child: TextField(
         controller: controller,
         onChanged: onChanged,
+        onSubmitted: onSubmitted,
+        textInputAction: TextInputAction.search,
         style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
         decoration: InputDecoration(
           hintText: hintText,
@@ -49,6 +53,7 @@ class MeloraSearchBar extends StatelessWidget {
                   onPressed: () {
                     controller.clear();
                     onChanged?.call('');
+                    onSubmitted?.call('');
                   },
                 )
               : null,

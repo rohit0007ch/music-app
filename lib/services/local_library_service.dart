@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:melora_music/data/models/track.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+/// Result of checking or requesting device music-library access.
+enum LocalLibraryPermission { granted, denied, permanentlyDenied }
+
 /// Loads device media-library songs and maps them to Melora [Track]s.
 ///
 /// Uses a thin platform channel (Android MediaStore / iOS MPMediaLibrary) plus
@@ -14,47 +17,94 @@ class LocalLibraryService {
 
   final MethodChannel _channel;
 
-  /// Returns `true` when the app may read the device music library.
-  Future<bool> ensurePermission() async {
-    if (await hasPermission()) return true;
+  static const _userScanError =
+      'Could not read the music library. Please try again.';
+  static const _userUnavailableError =
+      'Local music library is not available on this device.';
+
+  /// Soft check — does not show a system prompt.
+  Future<LocalLibraryPermission> permissionStatus() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final audio = await Permission.audio.status;
+      if (audio.isGranted) return LocalLibraryPermission.granted;
+      if (audio.isPermanentlyDenied) {
+        return LocalLibraryPermission.permanentlyDenied;
+      }
+
+      final storage = await Permission.storage.status;
+      if (storage.isGranted) return LocalLibraryPermission.granted;
+      if (storage.isPermanentlyDenied) {
+        return LocalLibraryPermission.permanentlyDenied;
+      }
+      return LocalLibraryPermission.denied;
+    }
+
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      final status = await Permission.mediaLibrary.status;
+      if (status.isGranted) return LocalLibraryPermission.granted;
+      if (status.isPermanentlyDenied || status.isRestricted) {
+        return LocalLibraryPermission.permanentlyDenied;
+      }
+      return LocalLibraryPermission.denied;
+    }
+
+    return LocalLibraryPermission.denied;
+  }
+
+  /// Requests permission when not already granted.
+  Future<LocalLibraryPermission> ensurePermission() async {
+    final current = await permissionStatus();
+    if (current == LocalLibraryPermission.granted) return current;
+    if (current == LocalLibraryPermission.permanentlyDenied) return current;
 
     if (defaultTargetPlatform == TargetPlatform.android) {
       final audio = await Permission.audio.request();
-      if (audio.isGranted) return true;
+      if (audio.isGranted) return LocalLibraryPermission.granted;
+      if (audio.isPermanentlyDenied) {
+        return LocalLibraryPermission.permanentlyDenied;
+      }
+
       final storage = await Permission.storage.request();
-      return storage.isGranted;
+      if (storage.isGranted) return LocalLibraryPermission.granted;
+      if (storage.isPermanentlyDenied) {
+        return LocalLibraryPermission.permanentlyDenied;
+      }
+      return LocalLibraryPermission.denied;
     }
 
     if (defaultTargetPlatform == TargetPlatform.iOS) {
-      return (await Permission.mediaLibrary.request()).isGranted;
+      final status = await Permission.mediaLibrary.request();
+      if (status.isGranted) return LocalLibraryPermission.granted;
+      if (status.isPermanentlyDenied || status.isRestricted) {
+        return LocalLibraryPermission.permanentlyDenied;
+      }
+      return LocalLibraryPermission.denied;
     }
 
-    return false;
+    return LocalLibraryPermission.denied;
   }
 
-  Future<bool> hasPermission() async {
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      if (await Permission.audio.isGranted) return true;
-      return Permission.storage.isGranted;
-    }
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      return Permission.mediaLibrary.isGranted;
-    }
-    return false;
-  }
+  /// Opens the OS Settings page for this app (user must grant access there).
+  Future<bool> openSystemSettings() => openAppSettings();
 
   /// Queries songs and returns only those with a resolvable audio URI.
   Future<List<Track>> loadSongs() async {
-    final raw = await _channel.invokeMethod<List<dynamic>>('querySongs');
-    if (raw == null) return const [];
+    try {
+      final raw = await _channel.invokeMethod<List<dynamic>>('querySongs');
+      if (raw == null) return const [];
 
-    final tracks = <Track>[];
-    for (final item in raw) {
-      if (item is! Map) continue;
-      final track = mapSong(Map<String, dynamic>.from(item));
-      if (track != null) tracks.add(track);
+      final tracks = <Track>[];
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final track = mapSong(Map<String, dynamic>.from(item));
+        if (track != null) tracks.add(track);
+      }
+      return tracks;
+    } on PlatformException catch (e) {
+      throw LocalLibraryException.fromPlatform(e);
+    } on MissingPluginException catch (e) {
+      throw LocalLibraryException.fromMissingPlugin(e);
     }
-    return tracks;
   }
 
   /// Maps a platform song map to a playable Melora [Track], or `null` if
@@ -81,8 +131,23 @@ class LocalLibraryService {
       source: TrackSource.local,
       localId: id,
       localUri: uri,
+      artworkUri: _optionalArtworkUri(song['artworkUri']),
       genre: (song['genre'] as String?) ?? '',
     );
+  }
+
+  /// Accepts file:// or http(s) artwork; drops blank / unsupported values.
+  static String? _optionalArtworkUri(Object? value) {
+    final raw = (value as String?)?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    final uri = Uri.tryParse(raw);
+    if (uri == null || uri.scheme.isEmpty) return null;
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme == 'file' || scheme == 'http' || scheme == 'https') {
+      return raw;
+    }
+    // content:// and others are not displayed by MeloraArtwork — omit.
+    return null;
   }
 
   static String _nonEmpty(String? value, String fallback) {
@@ -97,5 +162,43 @@ class LocalLibraryService {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '');
+  }
+}
+
+/// Friendly failure from the local-library channel.
+///
+/// [message] is safe for UI. [debugDetail] keeps technical context for logs.
+class LocalLibraryException implements Exception {
+  const LocalLibraryException(this.message, {this.debugDetail});
+
+  /// User-facing copy — never includes stack traces or raw plugin text.
+  final String message;
+
+  /// Optional diagnostic string for debugPrint / developer tooling.
+  final String? debugDetail;
+
+  factory LocalLibraryException.fromPlatform(PlatformException e) {
+    final detail = [
+      e.code,
+      if (e.message != null && e.message!.trim().isNotEmpty) e.message!.trim(),
+      if (e.details != null) e.details.toString(),
+    ].join(': ');
+    return LocalLibraryException(
+      LocalLibraryService._userScanError,
+      debugDetail: detail,
+    );
+  }
+
+  factory LocalLibraryException.fromMissingPlugin(MissingPluginException e) {
+    return LocalLibraryException(
+      LocalLibraryService._userUnavailableError,
+      debugDetail: e.message,
+    );
+  }
+
+  @override
+  String toString() {
+    if (debugDetail == null || debugDetail!.isEmpty) return message;
+    return '$message ($debugDetail)';
   }
 }

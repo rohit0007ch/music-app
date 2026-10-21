@@ -148,6 +148,25 @@ class _SongsTab extends StatelessWidget {
                   padding: EdgeInsets.all(AppSpacing.xl),
                   child: Center(child: CircularProgressIndicator()),
                 )
+              else if (libraryState.permissionPermanentlyDenied)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.sm,
+                    AppSpacing.md,
+                    AppSpacing.md,
+                  ),
+                  child: MeloraEmptyState(
+                    icon: Icons.lock_outline_rounded,
+                    title: 'Permission blocked',
+                    subtitle:
+                        libraryState.error ??
+                        'Music access is turned off. Enable it in Settings '
+                            'to play songs stored on this device.',
+                    actionLabel: 'Open Settings',
+                    action: () => libraryState.openSettings(),
+                  ),
+                )
               else if (!libraryState.permissionGranted)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(
@@ -160,9 +179,28 @@ class _SongsTab extends StatelessWidget {
                     icon: Icons.library_music_outlined,
                     title: 'Allow music access',
                     subtitle:
-                        'Grant library permission to play songs stored on this device.',
+                        'Grant library permission to play songs stored on '
+                        'this device.',
                     actionLabel: 'Allow access',
                     action: () => libraryState.load(requestPermission: true),
+                  ),
+                )
+              else if (libraryState.hasLoadError)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.sm,
+                    AppSpacing.md,
+                    AppSpacing.md,
+                  ),
+                  child: MeloraEmptyState(
+                    icon: Icons.error_outline_rounded,
+                    title: 'Could not load songs',
+                    subtitle:
+                        libraryState.error ??
+                        'Something went wrong reading your music library.',
+                    actionLabel: 'Retry',
+                    action: () => libraryState.load(requestPermission: false),
                   ),
                 )
               else if (localSongs.isEmpty)
@@ -251,9 +289,18 @@ class _LocalLibraryHeader extends StatelessWidget {
                 Text('On this device', style: AppTextStyles.headlineMedium),
                 if (libraryState.permissionGranted)
                   Text(
-                    libraryState.hasSongs
+                    libraryState.hasLoadError
+                        ? 'Scan failed'
+                        : libraryState.hasSongs
                         ? '${libraryState.songs.length} songs'
                         : 'Ready to scan',
+                    style: AppTextStyles.bodyMedium,
+                  )
+                else if (libraryState.loadedOnce)
+                  Text(
+                    libraryState.permissionPermanentlyDenied
+                        ? 'Access blocked'
+                        : 'Permission needed',
                     style: AppTextStyles.bodyMedium,
                   ),
               ],
@@ -262,9 +309,15 @@ class _LocalLibraryHeader extends StatelessWidget {
           TextButton(
             onPressed: libraryState.loading
                 ? null
+                : libraryState.permissionPermanentlyDenied
+                ? () => libraryState.openSettings()
                 : () => libraryState.load(requestPermission: true),
             child: Text(
-              libraryState.permissionGranted ? 'Refresh' : 'Allow access',
+              libraryState.permissionPermanentlyDenied
+                  ? 'Settings'
+                  : libraryState.permissionGranted
+                  ? 'Refresh'
+                  : 'Allow access',
             ),
           ),
         ],

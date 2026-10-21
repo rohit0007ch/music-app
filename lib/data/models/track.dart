@@ -2,7 +2,7 @@
 ///
 /// - [mock]  — demo data shipped with the app; no real audio file exists.
 /// - [local] — a file on the device's media library (MediaStore / MPMediaLibrary).
-/// - [online] — a permitted online stream (future milestone; not used yet).
+/// - [online] — a permitted online stream (e.g. Jamendo HTTPS audio URL).
 ///
 /// Local identifiers ([Track.localId], [Track.localUri]) are intentionally
 /// omitted from any cloud/Firebase synchronisation — they are device-specific
@@ -21,7 +21,9 @@ class Track {
     this.source = TrackSource.mock,
     this.localId,
     this.localUri,
+    this.streamUrl,
     this.artworkUri,
+    this.licenseUrl,
     this.isFavourite = false,
     this.isDownloaded = false,
     this.genre = '',
@@ -44,27 +46,47 @@ class Track {
   /// NOT suitable as a cloud-sync key — it is device-specific.
   final int? localId;
 
-  /// URI the audio engine opens.
+  /// Local file/content URI for [TrackSource.local] playback.
   /// Android: `content://media/external/audio/media/<localId>`
   /// iOS:     `ipod-library://item/item.mp3?id=<localId>`
-  /// Null for mock and online tracks.
+  /// Null for mock and online tracks — do not store HTTPS streams here.
   final String? localUri;
 
-  /// Content URI for embedded artwork, or null.
+  /// Remote HTTPS stream URL for [TrackSource.online] playback.
+  /// Null for mock and local tracks.
+  final String? streamUrl;
+
+  /// Content URI or HTTPS URL for artwork, or null.
   final String? artworkUri;
+
+  /// License deed / info URL when provided by the catalog (e.g. Creative
+  /// Commons). Presence does **not** imply a commercial Jamendo Pro license.
+  final String? licenseUrl;
 
   final bool isFavourite;
   final bool isDownloaded;
   final String genre;
 
+  /// URI the player should open: [streamUrl] for online, [localUri] for local.
+  String? get playbackUri {
+    switch (source) {
+      case TrackSource.online:
+        return _nonEmpty(streamUrl);
+      case TrackSource.local:
+        return _nonEmpty(localUri);
+      case TrackSource.mock:
+        return null;
+    }
+  }
+
   /// Whether a real audio source URI exists for this track.
   ///
-  /// Mock tracks are never playable. Local/online tracks require a non-empty
-  /// [localUri] (file/content URI today; stream URL later for online).
+  /// Mock tracks are never playable. Local tracks need [localUri]; online
+  /// tracks need [streamUrl]. Prefer [playbackUri] over reading either field
+  /// directly at call sites.
   bool get isPlayable {
     if (source == TrackSource.mock) return false;
-    final uri = localUri;
-    return uri != null && uri.isNotEmpty;
+    return playbackUri != null;
   }
 
   String get durationLabel {
@@ -83,7 +105,9 @@ class Track {
     TrackSource? source,
     int? localId,
     String? localUri,
+    String? streamUrl,
     String? artworkUri,
+    String? licenseUrl,
     bool? isFavourite,
     bool? isDownloaded,
     String? genre,
@@ -98,10 +122,18 @@ class Track {
       source: source ?? this.source,
       localId: localId ?? this.localId,
       localUri: localUri ?? this.localUri,
+      streamUrl: streamUrl ?? this.streamUrl,
       artworkUri: artworkUri ?? this.artworkUri,
+      licenseUrl: licenseUrl ?? this.licenseUrl,
       isFavourite: isFavourite ?? this.isFavourite,
       isDownloaded: isDownloaded ?? this.isDownloaded,
       genre: genre ?? this.genre,
     );
+  }
+
+  static String? _nonEmpty(String? value) {
+    final trimmed = value?.trim();
+    if (trimmed == null || trimmed.isEmpty) return null;
+    return trimmed;
   }
 }
