@@ -1,16 +1,19 @@
-/// Jamendo API configuration injected at build/run time.
+/// Jamendo API configuration.
 ///
-/// Pass the client ID without committing it:
+/// A default Client ID is baked in so `flutter run` works on any device with
+/// no extra flags. Override at build time if needed:
 /// ```
-/// flutter run --dart-define=JAMENDO_CLIENT_ID=your_client_id
-/// flutter test --dart-define=JAMENDO_CLIENT_ID=test
+/// flutter run --dart-define=JAMENDO_CLIENT_ID=other_id
 /// ```
 ///
-/// Never put [clientSecret] in the app. OAuth write APIs are out of scope for
+/// Never put a client secret in the app. OAuth write APIs are out of scope for
 /// Milestone 3; read/stream calls only need [clientId].
 abstract final class JamendoConfig {
-  /// Read-only API client id from `--dart-define=JAMENDO_CLIENT_ID=...`.
-  static const String clientId = String.fromEnvironment('JAMENDO_CLIENT_ID');
+  /// Read-only API client id (override with `--dart-define=JAMENDO_CLIENT_ID=`).
+  static const String clientId = String.fromEnvironment(
+    'JAMENDO_CLIENT_ID',
+    defaultValue: 'e54e7628',
+  );
 
   static bool get isConfigured => clientId.trim().isNotEmpty;
 

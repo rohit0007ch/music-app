@@ -1,17 +1,18 @@
 # melora_music
 
-A new Flutter project.
+Melora — Premium hybrid music player.
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+```bash
+flutter pub get
+flutter run
+```
 
-A few resources to get you started if this is your first Flutter project:
+Discover uses the Jamendo API with a built-in Client ID, so the catalog works on any device with a normal `flutter run` (no `--dart-define` required).
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+To use a different Client ID for a build:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter run --dart-define=JAMENDO_CLIENT_ID=other_id
+```

@@ -144,7 +144,7 @@ class JamendoApiClient {
   void _ensureConfigured() {
     if (_clientId.trim().isEmpty) {
       throw const JamendoConfigException(
-        'JAMENDO_CLIENT_ID is missing. Pass '
+        'JAMENDO_CLIENT_ID is missing. Rebuild with '
         '--dart-define=JAMENDO_CLIENT_ID=your_client_id',
       );
     }

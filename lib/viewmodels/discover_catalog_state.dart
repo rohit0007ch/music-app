@@ -81,7 +81,7 @@ class DiscoverCatalogState extends ChangeNotifier {
       _loading = false;
       _tracks = const [];
       _errorMessage =
-          'Jamendo is not configured. Run with '
+          'Jamendo is not configured. Rebuild with '
           '--dart-define=JAMENDO_CLIENT_ID=your_client_id';
       _activeQuery = query;
       _activeTags = tags;
@@ -116,7 +116,7 @@ class DiscoverCatalogState extends ChangeNotifier {
 
   static String _friendlyMessage(Object error) {
     if (error is JamendoConfigException) {
-      return 'Jamendo is not configured. Pass '
+      return 'Jamendo is not configured. Rebuild with '
           '--dart-define=JAMENDO_CLIENT_ID=your_client_id';
     }
     if (error is JamendoHttpException) {
