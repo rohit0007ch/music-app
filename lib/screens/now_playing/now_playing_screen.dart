@@ -9,11 +9,18 @@ import 'package:melora_music/screens/now_playing/widgets/progress_bar_widget.dar
 import 'package:melora_music/theme/app_colors.dart';
 import 'package:melora_music/theme/app_spacing.dart';
 import 'package:melora_music/theme/app_text_styles.dart';
+import 'package:melora_music/viewmodels/favorites_state.dart';
 import 'package:melora_music/viewmodels/player_state.dart';
 
 class NowPlayingScreen extends StatelessWidget {
-  const NowPlayingScreen({super.key, required this.playerState});
+  const NowPlayingScreen({
+    super.key,
+    required this.playerState,
+    required this.favoritesState,
+  });
+
   final PlayerState playerState;
+  final FavoritesState favoritesState;
 
   void _showQueue(BuildContext context) => showModalBottomSheet(
     context: context,
@@ -41,16 +48,37 @@ class NowPlayingScreen extends StatelessWidget {
     builder: (_) => const EqualizerSheet(),
   );
 
+  Future<void> _onFavouritePressed(BuildContext context) async {
+    final track = playerState.currentTrack;
+    if (track == null || favoritesState.saving) return;
+
+    final ok = await favoritesState.toggle(track);
+    playerState.syncFavouriteFlags(favoritesState.isFavorite);
+    if (!context.mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              favoritesState.error ?? 'Could not update favorites.',
+            ),
+          ),
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: ListenableBuilder(
-        listenable: playerState,
+        listenable: Listenable.merge([playerState, favoritesState]),
         builder: (context, _) {
           final track = playerState.currentTrack;
           if (track == null) return const SizedBox.shrink();
 
+          final isFavourite = favoritesState.isFavorite(track.id);
           final palette =
               AppColors.artworkPalettes[track.paletteIndex %
                   AppColors.artworkPalettes.length];
@@ -164,15 +192,17 @@ class NowPlayingScreen extends StatelessWidget {
                           ),
                           IconButton(
                             icon: Icon(
-                              track.isFavourite
+                              isFavourite
                                   ? Icons.favorite_rounded
                                   : Icons.favorite_border_rounded,
-                              color: track.isFavourite
+                              color: isFavourite
                                   ? AppColors.accentAmber
                                   : AppColors.textDisabled,
                               size: 26,
                             ),
-                            onPressed: playerState.toggleFavourite,
+                            onPressed: favoritesState.saving
+                                ? null
+                                : () => _onFavouritePressed(context),
                           ),
                         ],
                       ),

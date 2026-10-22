@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:melora_music/data/mock/mock_data.dart';
+import 'package:melora_music/data/models/favorite_record.dart';
 import 'package:melora_music/data/models/track.dart';
 import 'package:melora_music/shared/widgets/melora_artwork.dart';
 import 'package:melora_music/shared/widgets/melora_empty_state.dart';
@@ -7,6 +8,7 @@ import 'package:melora_music/shared/widgets/melora_track_tile.dart';
 import 'package:melora_music/theme/app_colors.dart';
 import 'package:melora_music/theme/app_spacing.dart';
 import 'package:melora_music/theme/app_text_styles.dart';
+import 'package:melora_music/viewmodels/favorites_state.dart';
 import 'package:melora_music/viewmodels/local_library_state.dart';
 import 'package:melora_music/viewmodels/player_state.dart';
 
@@ -15,11 +17,13 @@ class LibraryScreen extends StatefulWidget {
     super.key,
     required this.playerState,
     required this.libraryState,
+    required this.favoritesState,
     required this.onTrackTap,
   });
 
   final PlayerState playerState;
   final LocalLibraryState libraryState;
+  final FavoritesState favoritesState;
   final Future<void> Function(Track track, {List<Track>? queueContext})
   onTrackTap;
 
@@ -105,7 +109,9 @@ class _LibraryScreenState extends State<LibraryScreen>
               const _ArtistsTab(),
               _FavouritesTab(
                 playerState: widget.playerState,
-                onTrackTap: (track) => widget.onTrackTap(track),
+                libraryState: widget.libraryState,
+                favoritesState: widget.favoritesState,
+                onTrackTap: widget.onTrackTap,
               ),
               const _PlaylistsTab(),
             ],
@@ -426,41 +432,134 @@ class _ArtistsTab extends StatelessWidget {
 }
 
 class _FavouritesTab extends StatelessWidget {
-  const _FavouritesTab({required this.playerState, required this.onTrackTap});
+  const _FavouritesTab({
+    required this.playerState,
+    required this.libraryState,
+    required this.favoritesState,
+    required this.onTrackTap,
+  });
+
   final PlayerState playerState;
-  final void Function(Track) onTrackTap;
+  final LocalLibraryState libraryState;
+  final FavoritesState favoritesState;
+  final Future<void> Function(Track track, {List<Track>? queueContext})
+  onTrackTap;
 
   @override
   Widget build(BuildContext context) {
-    final favs = MockData.favourites;
-    if (favs.isEmpty) {
-      return const MeloraEmptyState(
-        icon: Icons.favorite_border_rounded,
-        title: 'No favourites yet',
-        subtitle: 'Tap the heart icon on any track to add it here.',
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-      itemCount: favs.length,
-      itemBuilder: (context, i) {
-        final t = favs[i];
-        return ListenableBuilder(
-          listenable: playerState,
-          builder: (context, _) => MeloraTrackTile(
-            track: t,
-            isPlaying: playerState.currentTrack?.id == t.id,
-            onTap: () => onTrackTap(t),
-            trailing: const Icon(
-              Icons.favorite_rounded,
-              color: AppColors.accentAmber,
-              size: 18,
-            ),
-          ),
+    return ListenableBuilder(
+      listenable: Listenable.merge([playerState, libraryState, favoritesState]),
+      builder: (context, _) {
+        if (favoritesState.loading && !favoritesState.loadedOnce) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (favoritesState.loadedOnce &&
+            favoritesState.error != null &&
+            favoritesState.isEmpty) {
+          return MeloraEmptyState(
+            icon: Icons.error_outline_rounded,
+            title: 'Couldn’t load favourites',
+            subtitle: favoritesState.error,
+            actionLabel: 'Retry',
+            action: () => favoritesState.load(),
+          );
+        }
+
+        if (favoritesState.isEmpty) {
+          return const MeloraEmptyState(
+            icon: Icons.favorite_border_rounded,
+            title: 'No favourites yet',
+            subtitle: 'Tap the heart icon on any track to add it here.',
+          );
+        }
+
+        final displayTracks = [
+          for (final record in favoritesState.favorites)
+            resolveFavoriteForDisplay(record, libraryState.songs),
+        ];
+
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          itemCount: displayTracks.length,
+          itemBuilder: (context, i) {
+            final t = displayTracks[i];
+            final unavailable = t.source == TrackSource.local && !t.isPlayable;
+            return MeloraTrackTile(
+              track: t,
+              isPlaying: playerState.currentTrack?.id == t.id,
+              onTap: () {
+                if (unavailable) {
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(
+                      const SnackBar(
+                        content: Text('This song is no longer on this device.'),
+                      ),
+                    );
+                  return;
+                }
+                final queue = displayTracks
+                    .where((track) => track.isPlayable)
+                    .toList();
+                onTrackTap(t, queueContext: queue);
+              },
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (unavailable)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Text(
+                        'Unavailable',
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.textDisabled,
+                        ),
+                      ),
+                    ),
+                  const Icon(
+                    Icons.favorite_rounded,
+                    color: AppColors.accentAmber,
+                    size: 18,
+                  ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
   }
+}
+
+/// Resolves a persisted favorite against the current library scan by stable ID.
+///
+/// Local matches use live metadata/URI. Missing local files stay saved but
+/// return a non-playable track (no [Track.localUri]).
+@visibleForTesting
+Track resolveFavoriteForDisplay(FavoriteRecord record, List<Track> localSongs) {
+  if (record.source == TrackSource.local) {
+    for (final song in localSongs) {
+      if (song.id == record.id) {
+        return song.copyWith(isFavourite: true);
+      }
+    }
+    return Track(
+      id: record.id,
+      title: record.title,
+      artist: record.artist,
+      album: record.album,
+      durationSeconds: record.durationSeconds,
+      paletteIndex: record.paletteIndex,
+      source: TrackSource.local,
+      localId: record.localId,
+      localUri: null,
+      artworkUri: record.artworkUri,
+      genre: record.genre,
+      isFavourite: true,
+    );
+  }
+  return record.toTrack();
 }
 
 class _PlaylistsTab extends StatelessWidget {

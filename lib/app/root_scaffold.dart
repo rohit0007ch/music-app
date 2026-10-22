@@ -8,12 +8,23 @@ import 'package:melora_music/screens/now_playing/now_playing_screen.dart';
 import 'package:melora_music/screens/profile/profile_screen.dart';
 import 'package:melora_music/shared/widgets/melora_mini_player.dart';
 import 'package:melora_music/theme/app_colors.dart';
+import 'package:melora_music/viewmodels/favorites_state.dart';
 import 'package:melora_music/viewmodels/local_library_state.dart';
 import 'package:melora_music/viewmodels/player_state.dart';
 
 /// Root scaffold — owns bottom nav, mini-player, and the active screen.
 class RootScaffold extends StatefulWidget {
-  const RootScaffold({super.key});
+  const RootScaffold({
+    super.key,
+    this.playerState,
+    this.libraryState,
+    this.favoritesState,
+  });
+
+  /// Optional overrides for tests.
+  final PlayerState? playerState;
+  final LocalLibraryState? libraryState;
+  final FavoritesState? favoritesState;
 
   @override
   State<RootScaffold> createState() => _RootScaffoldState();
@@ -21,13 +32,41 @@ class RootScaffold extends StatefulWidget {
 
 class _RootScaffoldState extends State<RootScaffold> {
   int _currentIndex = 0;
-  final PlayerState _playerState = PlayerState();
-  final LocalLibraryState _libraryState = LocalLibraryState();
+  late final PlayerState _playerState;
+  late final LocalLibraryState _libraryState;
+  late final FavoritesState _favoritesState;
+  late final bool _ownsPlayer;
+  late final bool _ownsLibrary;
+  late final bool _ownsFavorites;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsPlayer = widget.playerState == null;
+    _ownsLibrary = widget.libraryState == null;
+    _ownsFavorites = widget.favoritesState == null;
+    _playerState = widget.playerState ?? PlayerState();
+    _libraryState = widget.libraryState ?? LocalLibraryState();
+    _favoritesState = widget.favoritesState ?? FavoritesState();
+
+    _favoritesState.addListener(_syncFavouriteFlags);
+    // Fire-and-forget; Favourites tab / heart react via listeners.
+    _favoritesState.load().then((_) {
+      if (!mounted) return;
+      _syncFavouriteFlags();
+    });
+  }
+
+  void _syncFavouriteFlags() {
+    _playerState.syncFavouriteFlags(_favoritesState.isFavorite);
+  }
 
   @override
   void dispose() {
-    _playerState.dispose();
-    _libraryState.dispose();
+    _favoritesState.removeListener(_syncFavouriteFlags);
+    if (_ownsPlayer) _playerState.dispose();
+    if (_ownsLibrary) _libraryState.dispose();
+    if (_ownsFavorites) _favoritesState.dispose();
     super.dispose();
   }
 
@@ -37,6 +76,8 @@ class _RootScaffoldState extends State<RootScaffold> {
       queueContext: queueContext,
     );
     if (!mounted) return;
+
+    _syncFavouriteFlags();
 
     final message = _playerState.takeUserMessage();
     if (message != null) {
@@ -64,8 +105,10 @@ class _RootScaffoldState extends State<RootScaffold> {
     Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (_, animation, _) =>
-            NowPlayingScreen(playerState: _playerState),
+        pageBuilder: (_, animation, _) => NowPlayingScreen(
+          playerState: _playerState,
+          favoritesState: _favoritesState,
+        ),
         transitionsBuilder: (_, animation, _, child) => SlideTransition(
           position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
               .animate(
@@ -95,6 +138,7 @@ class _RootScaffoldState extends State<RootScaffold> {
             LibraryScreen(
               playerState: _playerState,
               libraryState: _libraryState,
+              favoritesState: _favoritesState,
               onTrackTap: _onTrackTap,
             ),
             DownloadsScreen(

@@ -197,12 +197,31 @@ class MeloraPlayerState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleFavourite() {
-    if (_currentTrack == null) return;
-    _currentTrack = _currentTrack!.copyWith(
-      isFavourite: !_currentTrack!.isFavourite,
-    );
-    notifyListeners();
+  /// Aligns [Track.isFavourite] on the current track and queue with [isFavorite].
+  ///
+  /// Does not change queue order, playback position, or the audio engine.
+  /// [FavoritesState] remains the source of truth for membership.
+  void syncFavouriteFlags(bool Function(String id) isFavorite) {
+    var changed = false;
+
+    if (_currentTrack != null) {
+      final next = isFavorite(_currentTrack!.id);
+      if (_currentTrack!.isFavourite != next) {
+        _currentTrack = _currentTrack!.copyWith(isFavourite: next);
+        changed = true;
+      }
+    }
+
+    for (var i = 0; i < _queue.length; i++) {
+      final track = _queue[i];
+      final next = isFavorite(track.id);
+      if (track.isFavourite != next) {
+        _queue[i] = track.copyWith(isFavourite: next);
+        changed = true;
+      }
+    }
+
+    if (changed) notifyListeners();
   }
 
   void setSleepTimer(int? minutes) {
