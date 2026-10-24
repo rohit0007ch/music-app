@@ -1,3 +1,4 @@
+import 'package:melora_music/data/featured/featured_song.dart';
 import 'package:melora_music/data/models/lyrics.dart';
 import 'package:melora_music/data/models/track.dart';
 import 'package:melora_music/data/sources/lrclib_api_client.dart';
@@ -6,6 +7,29 @@ import 'package:melora_music/data/sources/lrclib_api_client.dart';
 abstract class LyricsRepository {
   Future<LyricsResult?> fetchForTrack(Track track);
   void dispose();
+}
+
+/// Serves bundled lyrics for the featured track, otherwise delegates to LRCLIB.
+class MeloraLyricsRepository implements LyricsRepository {
+  MeloraLyricsRepository({LyricsRepository? remote})
+    : _remote = remote ?? LrclibLyricsRepository(),
+      _ownsRemote = remote == null;
+
+  final LyricsRepository _remote;
+  final bool _ownsRemote;
+
+  @override
+  Future<LyricsResult?> fetchForTrack(Track track) async {
+    if (FeaturedSong.isFeaturedId(track.id)) {
+      return FeaturedSong.loadLyrics();
+    }
+    return _remote.fetchForTrack(track);
+  }
+
+  @override
+  void dispose() {
+    if (_ownsRemote) _remote.dispose();
+  }
 }
 
 /// LRCLIB-backed lyrics repository with conservative matching.

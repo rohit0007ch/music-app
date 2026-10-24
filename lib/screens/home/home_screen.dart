@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:melora_music/data/featured/featured_song.dart';
 import 'package:melora_music/data/mock/mock_data.dart';
 import 'package:melora_music/data/models/playlist_record.dart';
 import 'package:melora_music/data/models/track.dart';
 import 'package:melora_music/screens/library/playlist_detail_screen.dart';
+import 'package:melora_music/screens/now_playing/sheets/lyrics_sheet.dart';
 import 'package:melora_music/shared/widgets/melora_artwork.dart';
 import 'package:melora_music/shared/widgets/melora_card.dart';
 import 'package:melora_music/shared/widgets/melora_track_tile.dart';
@@ -45,7 +47,6 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final recentTracks = MockData.tracks.take(5).toList();
-    final featuredTrack = MockData.tracks[2];
     final topTracks = MockData.tracks.skip(5).take(5).toList();
 
     return CustomScrollView(
@@ -94,16 +95,16 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
 
-        // Featured card
+        // Featured song
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.md,
               vertical: AppSpacing.sm,
             ),
-            child: _FeaturedCard(
-              track: featuredTrack,
-              onTap: () => onTrackTap(featuredTrack),
+            child: FeaturedSongCard(
+              playerState: playerState,
+              onPlay: () => onTrackTap(FeaturedSong.track),
             ),
           ),
         ),
@@ -227,118 +228,339 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-class _FeaturedCard extends StatelessWidget {
-  const _FeaturedCard({required this.track, required this.onTap});
-  final Track track;
-  final VoidCallback onTap;
+/// Premium featured-song card driven by the shared [PlayerState].
+class FeaturedSongCard extends StatefulWidget {
+  const FeaturedSongCard({
+    super.key,
+    required this.playerState,
+    required this.onPlay,
+  });
+
+  final PlayerState playerState;
+  final Future<void> Function() onPlay;
+
+  @override
+  State<FeaturedSongCard> createState() => FeaturedSongCardState();
+}
+
+@visibleForTesting
+class FeaturedSongCardState extends State<FeaturedSongCard>
+    with TickerProviderStateMixin {
+  late final AnimationController _glowController;
+  late final AnimationController _pulseController;
+
+  bool get _isCurrent =>
+      FeaturedSong.isFeaturedId(widget.playerState.currentTrack?.id);
+
+  bool get _isPlayingFeatured => _isCurrent && widget.playerState.isPlaying;
+
+  @override
+  void initState() {
+    super.initState();
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    );
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    widget.playerState.addListener(_syncAnimations);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncAnimations());
+  }
+
+  @override
+  void didUpdateWidget(covariant FeaturedSongCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.playerState != widget.playerState) {
+      oldWidget.playerState.removeListener(_syncAnimations);
+      widget.playerState.addListener(_syncAnimations);
+      _syncAnimations();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.playerState.removeListener(_syncAnimations);
+    _glowController.dispose();
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  void _syncAnimations() {
+    if (!mounted) return;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final playing = _isPlayingFeatured;
+
+    if (reduceMotion) {
+      _glowController.stop();
+      _glowController.value = 0.35;
+      _pulseController.stop();
+      _pulseController.value = 0;
+      return;
+    }
+
+    if (!_glowController.isAnimating) {
+      _glowController.repeat(reverse: true);
+    }
+
+    if (playing) {
+      if (!_pulseController.isAnimating) {
+        _pulseController.repeat(reverse: true);
+      }
+    } else {
+      _pulseController.stop();
+      _pulseController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  Future<void> _onPlayPause() async {
+    if (_isCurrent) {
+      await widget.playerState.togglePlayPause();
+      return;
+    }
+    await widget.onPlay();
+  }
+
+  void _openLyrics(BuildContext context) {
+    if (!_isCurrent) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Play Dinesh Dalla first to view lyrics.'),
+          ),
+        );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => LyricsSheet(playerState: widget.playerState),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final track = FeaturedSong.track;
     final palette = AppColors
         .artworkPalettes[track.paletteIndex % AppColors.artworkPalettes.length];
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 180,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-          gradient: LinearGradient(
-            colors: [palette[0], palette[1]],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              right: -20,
-              top: -20,
-              child: Opacity(
-                opacity: 0.15,
-                child: const Icon(
-                  Icons.music_note_rounded,
-                  size: 160,
-                  color: Colors.white,
+
+    return ListenableBuilder(
+      listenable: widget.playerState,
+      builder: (context, _) {
+        final playing = _isPlayingFeatured;
+        return AnimatedBuilder(
+          animation: Listenable.merge([_glowController, _pulseController]),
+          builder: (context, child) {
+            final glowT = _glowController.value;
+            final pulse = 1.0 + (_pulseController.value * 0.035);
+            final glowAlpha = 0.22 + (glowT * 0.28);
+            final borderAlpha = 0.35 + (glowT * 0.4);
+
+            return Transform.scale(
+              scale: playing ? pulse : 1.0,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.accentViolet.withValues(
+                        alpha: playing ? glowAlpha : glowAlpha * 0.45,
+                      ),
+                      blurRadius: playing ? 28 : 18,
+                      spreadRadius: playing ? 1 : 0,
+                    ),
+                  ],
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                    border: Border.all(
+                      color: AppColors.accentVioletLight.withValues(
+                        alpha: borderAlpha * (playing ? 1 : 0.55),
+                      ),
+                      width: 1.5,
+                    ),
+                    gradient: LinearGradient(
+                      colors: [
+                        palette[0].withValues(alpha: 0.95),
+                        AppColors.surfaceElevated,
+                        palette[1].withValues(alpha: 0.85),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: child,
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(
-                        AppSpacing.radiusFull,
-                      ),
-                    ),
-                    child: const Text(
-                      'Featured',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    track.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    track.artist,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(
-                        AppSpacing.radiusFull,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.play_arrow_rounded,
-                          color: palette[0],
-                          size: 18,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Play Now',
-                          style: TextStyle(
-                            color: palette[0],
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Row(
+              children: [
+                MeloraArtwork(
+                  paletteIndex: track.paletteIndex,
+                  size: 108,
+                  borderRadius: AppSpacing.radiusMd,
+                  imageUrl: track.artworkUri,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.accentViolet.withValues(
+                                alpha: 0.35,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AppSpacing.radiusFull,
+                              ),
+                            ),
+                            child: Text(
+                              FeaturedSong.featuredLabel,
+                              style: AppTextStyles.labelMedium.copyWith(
+                                color: Colors.white,
+                                fontSize: 10,
+                                letterSpacing: 0.8,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(
+                                AppSpacing.radiusFull,
+                              ),
+                            ),
+                            child: Text(
+                              'Local Song',
+                              style: AppTextStyles.labelMedium.copyWith(
+                                color: AppColors.textSecondary,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        track.title,
+                        style: AppTextStyles.headlineMedium.copyWith(
+                          color: Colors.white,
                         ),
-                      ],
-                    ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        track.artist,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: Colors.white.withValues(alpha: 0.8),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Row(
+                        children: [
+                          _PlayPauseButton(
+                            isPlaying: playing,
+                            accent: palette[0],
+                            onPressed: _onPlayPause,
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Lyrics',
+                            onPressed: () => _openLyrics(context),
+                            icon: const Icon(
+                              Icons.lyrics_outlined,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _PlayPauseButton extends StatelessWidget {
+  const _PlayPauseButton({
+    required this.isPlaying,
+    required this.accent,
+    required this.onPressed,
+  });
+
+  final bool isPlaying;
+  final Color accent;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                transitionBuilder: (child, animation) => ScaleTransition(
+                  scale: animation,
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: Icon(
+                  isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  key: ValueKey(isPlaying),
+                  color: accent,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                isPlaying ? 'Pause' : 'Play',
+                style: TextStyle(
+                  color: accent,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

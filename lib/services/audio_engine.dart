@@ -6,7 +6,7 @@ import 'package:melora_music/data/models/track.dart';
 /// Thin wrapper around [AudioPlayer] from `just_audio`.
 ///
 /// Responsibilities:
-/// - Resolves [Track.playbackUri] (local file/content URI or online HTTPS).
+/// - Resolves [Track] audio for local/online/asset sources.
 /// - Refuses mock / non-playable tracks and malformed URIs before touching
 ///   `just_audio`.
 /// - Configures [AudioSession] for music playback on first use.
@@ -29,18 +29,17 @@ class AudioEngine {
 
   // ── Playback commands ─────────────────────────────────────────────────────
 
-  /// Loads and plays [track] via [Track.playbackUri].
+  /// Loads and plays [track] via a resolved [AudioSource].
   ///
   /// Throws [ArgumentError] or [FormatException] if the track cannot be played
-  /// (mock, missing URI, wrong scheme for source). Callers must not invoke
+  /// (mock, missing URI/path, wrong scheme for source). Callers must not invoke
   /// this for demo tracks.
   Future<void> play(Track track) async {
     // Validate before any async player work so failures stay synchronous and
     // do not leave just_audio mid-load.
-    final uri = resolvePlaybackUri(track);
+    final source = resolveAudioSource(track);
 
     await _ensureSessionConfigured();
-    final source = _toAudioSource(track, uri);
     await _player.setAudioSource(source);
     await _player.play();
   }
@@ -55,12 +54,43 @@ class AudioEngine {
 
   void dispose() => _player.dispose();
 
-  // ── URI resolution (testable without a live player) ───────────────────────
+  // ── Source resolution (testable without a live player) ────────────────────
 
-  /// Resolves and validates the URI that `just_audio` should open.
+  /// Builds a tagged [AudioSource] for [track].
+  ///
+  /// - [TrackSource.online] → [AudioSource.uri] http(s)
+  /// - [TrackSource.local] → [AudioSource.uri] file/content/…
+  /// - [TrackSource.asset] → [AudioSource.asset]
+  /// - [TrackSource.mock] → always rejected
+  static AudioSource resolveAudioSource(Track track) {
+    final tag = _mediaItemFor(track);
+
+    if (track.source == TrackSource.asset) {
+      final path = track.assetPath?.trim();
+      if (path == null || path.isEmpty) {
+        throw ArgumentError('Asset track "${track.title}" has no assetPath.');
+      }
+      if (!path.startsWith('assets/')) {
+        throw ArgumentError(
+          'Asset track "${track.title}" path must start with "assets/", '
+          'got "$path".',
+        );
+      }
+      return AudioSource.asset(path, tag: tag);
+    }
+
+    final uri = resolvePlaybackUri(track);
+    return AudioSource.uri(uri, tag: tag);
+  }
+
+  /// Resolves and validates a URI for local/online playback.
+  ///
+  /// Asset tracks should use [resolveAudioSource] — this method still returns
+  /// a synthetic `asset:` [Uri] for tests that assert path identity.
   ///
   /// - [TrackSource.online] → http(s) [Track.streamUrl]
   /// - [TrackSource.local] → non-http(s) [Track.localUri] (content/file/…)
+  /// - [TrackSource.asset] → `asset:` URI whose path is [Track.assetPath]
   /// - [TrackSource.mock] → always rejected
   static Uri resolvePlaybackUri(Track track) {
     if (track.source == TrackSource.mock) {
@@ -68,6 +98,19 @@ class AudioEngine {
         'AudioEngine cannot load mock track "${track.title}". '
         'Show demo-unavailable UI instead.',
       );
+    }
+
+    if (track.source == TrackSource.asset) {
+      final path = track.assetPath?.trim();
+      if (path == null || path.isEmpty) {
+        throw ArgumentError('Track "${track.title}" (asset) has no assetPath.');
+      }
+      if (!path.startsWith('assets/')) {
+        throw ArgumentError(
+          'Asset path must start with "assets/", got "$path".',
+        );
+      }
+      return Uri(scheme: 'asset', path: path);
     }
 
     final raw = track.playbackUri;
@@ -101,6 +144,7 @@ class AudioEngine {
             'TrackSource.online.',
           );
         }
+      case TrackSource.asset:
       case TrackSource.mock:
         throw ArgumentError(
           'AudioEngine cannot load mock track "${track.title}".',
@@ -119,17 +163,23 @@ class AudioEngine {
     _sessionConfigured = true;
   }
 
-  /// Builds a tagged [AudioSource] for notification / lock-screen metadata.
-  AudioSource _toAudioSource(Track track, Uri uri) {
-    final tag = MediaItem(
+  static MediaItem _mediaItemFor(Track track) {
+    return MediaItem(
       id: track.id,
       title: track.title,
       artist: track.artist,
       album: track.album,
       duration: Duration(seconds: track.durationSeconds),
-      artUri: track.artworkUri != null ? Uri.tryParse(track.artworkUri!) : null,
+      artUri: _mediaArtUri(track.artworkUri),
     );
+  }
 
-    return AudioSource.uri(uri, tag: tag);
+  /// OS media controls need a network/file URI — Flutter asset paths are not
+  /// valid [MediaItem.artUri] values.
+  static Uri? _mediaArtUri(String? raw) {
+    final value = raw?.trim();
+    if (value == null || value.isEmpty) return null;
+    if (value.startsWith('assets/')) return null;
+    return Uri.tryParse(value);
   }
 }

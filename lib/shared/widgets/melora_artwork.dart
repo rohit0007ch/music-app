@@ -7,8 +7,9 @@ import 'package:melora_music/theme/app_spacing.dart';
 
 /// Displays gradient placeholder artwork, optionally overlaid with an image.
 ///
-/// Supports HTTPS (online catalog) and `file://` (local album art cache).
-/// Missing, invalid, or unloadable URIs fall back to the gradient.
+/// Supports HTTPS (online catalog), `file://` (local album art cache), and
+/// Flutter asset paths (`assets/…`). Missing, invalid, or unloadable URIs
+/// fall back to the gradient.
 class MeloraArtwork extends StatelessWidget {
   const MeloraArtwork({
     super.key,
@@ -57,6 +58,17 @@ class MeloraArtwork extends StatelessWidget {
   Widget? _buildOverlayImage() {
     final raw = imageUrl?.trim();
     if (raw == null || raw.isEmpty) return null;
+
+    // Bundled Flutter assets (featured artwork, etc.).
+    if (raw.startsWith('assets/')) {
+      return Image.asset(
+        raw,
+        fit: BoxFit.cover,
+        width: size,
+        height: size,
+        errorBuilder: (_, _, _) => _PlaceholderIcon(size: size),
+      );
+    }
 
     final uri = Uri.tryParse(raw);
     if (uri == null || uri.scheme.isEmpty) return null;

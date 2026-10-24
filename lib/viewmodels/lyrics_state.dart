@@ -10,7 +10,7 @@ enum LyricsStatus { idle, loading, ready, unavailable, error }
 /// Never mutates playback, queue, favorites, or playlists.
 class LyricsState extends ChangeNotifier {
   LyricsState({LyricsRepository? repository})
-    : _repository = repository ?? LrclibLyricsRepository(),
+    : _repository = repository ?? MeloraLyricsRepository(),
       _ownsRepository = repository == null;
 
   final LyricsRepository _repository;

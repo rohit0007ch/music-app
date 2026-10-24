@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:melora_music/data/models/track.dart';
 import 'package:melora_music/services/audio_engine.dart';
 import 'package:melora_music/viewmodels/player_state.dart';
@@ -114,6 +115,29 @@ void main() {
       );
     });
 
+    test('resolves bundled asset paths', () {
+      const asset = Track(
+        id: 'featured_test',
+        title: 'Asset Song',
+        artist: 'A',
+        album: 'B',
+        durationSeconds: 10,
+        paletteIndex: 0,
+        source: TrackSource.asset,
+        assetPath: 'assets/audio/dinesh.mp3',
+      );
+      final uri = AudioEngine.resolvePlaybackUri(asset);
+      expect(uri.scheme, 'asset');
+      expect(uri.path, 'assets/audio/dinesh.mp3');
+
+      final source = AudioEngine.resolveAudioSource(asset);
+      expect(source, isA<UriAudioSource>());
+      expect(
+        (source as UriAudioSource).uri.toString(),
+        contains('assets/audio/dinesh.mp3'),
+      );
+    });
+
     test('does not treat streamUrl as local or localUri as online', () {
       // Online source ignores localUri even if present.
       final online = Track(
@@ -175,6 +199,8 @@ void main() {
       expect(started, isFalse);
       expect(player.isPlaying, isFalse);
       expect(player.error, isNotNull);
+      expect(player.error, isNot(contains('StateError')));
+      expect(player.takeUserMessage(), player.error);
       expect(player.currentTrack?.id, track.id);
       expect(player.queue.map((t) => t.id), queue.map((t) => t.id));
     });

@@ -3,11 +3,12 @@
 /// - [mock]  — demo data shipped with the app; no real audio file exists.
 /// - [local] — a file on the device's media library (MediaStore / MPMediaLibrary).
 /// - [online] — a permitted online stream (e.g. Jamendo HTTPS audio URL).
+/// - [asset] — a Flutter-bundled asset (e.g. featured song MP3 under `assets/`).
 ///
 /// Local identifiers ([Track.localId], [Track.localUri]) are intentionally
 /// omitted from any cloud/Firebase synchronisation — they are device-specific
 /// and meaningless on another device.
-enum TrackSource { mock, local, online }
+enum TrackSource { mock, local, online, asset }
 
 /// A single music track.
 class Track {
@@ -22,6 +23,7 @@ class Track {
     this.localId,
     this.localUri,
     this.streamUrl,
+    this.assetPath,
     this.artworkUri,
     this.licenseUrl,
     this.isFavourite = false,
@@ -42,21 +44,25 @@ class Track {
   /// Platform-native stable identifier.
   /// Android: MediaStore `_ID` (int).
   /// iOS: MPMediaItem `persistentID` (int).
-  /// Null for [TrackSource.mock] and [TrackSource.online].
+  /// Null for [TrackSource.mock], [TrackSource.online], and [TrackSource.asset].
   /// NOT suitable as a cloud-sync key — it is device-specific.
   final int? localId;
 
   /// Local file/content URI for [TrackSource.local] playback.
   /// Android: `content://media/external/audio/media/<localId>`
   /// iOS:     `ipod-library://item/item.mp3?id=<localId>`
-  /// Null for mock and online tracks — do not store HTTPS streams here.
+  /// Null for mock, online, and asset tracks — do not store HTTPS streams here.
   final String? localUri;
 
   /// Remote HTTPS stream URL for [TrackSource.online] playback.
-  /// Null for mock and local tracks.
+  /// Null for mock, local, and asset tracks.
   final String? streamUrl;
 
-  /// Content URI or HTTPS URL for artwork, or null.
+  /// Flutter asset path for [TrackSource.asset] playback
+  /// (e.g. `assets/audio/dinesh.mp3`). Null for other sources.
+  final String? assetPath;
+
+  /// Content URI, HTTPS URL, or bundled asset path (`assets/…`) for artwork.
   final String? artworkUri;
 
   /// License deed / info URL when provided by the catalog (e.g. Creative
@@ -67,23 +73,28 @@ class Track {
   final bool isDownloaded;
   final String genre;
 
-  /// URI the player should open: [streamUrl] for online, [localUri] for local.
+  /// URI / path the player should open for this source.
+  ///
+  /// Online → [streamUrl], local → [localUri], asset → [assetPath],
+  /// mock → null. Asset paths are Flutter asset keys (not filesystem paths).
   String? get playbackUri {
     switch (source) {
       case TrackSource.online:
         return _nonEmpty(streamUrl);
       case TrackSource.local:
         return _nonEmpty(localUri);
+      case TrackSource.asset:
+        return _nonEmpty(assetPath);
       case TrackSource.mock:
         return null;
     }
   }
 
-  /// Whether a real audio source URI exists for this track.
+  /// Whether a real audio source exists for this track.
   ///
   /// Mock tracks are never playable. Local tracks need [localUri]; online
-  /// tracks need [streamUrl]. Prefer [playbackUri] over reading either field
-  /// directly at call sites.
+  /// tracks need [streamUrl]; asset tracks need [assetPath]. Prefer
+  /// [playbackUri] over reading either field directly at call sites.
   bool get isPlayable {
     if (source == TrackSource.mock) return false;
     return playbackUri != null;
@@ -106,6 +117,7 @@ class Track {
     int? localId,
     String? localUri,
     String? streamUrl,
+    String? assetPath,
     String? artworkUri,
     String? licenseUrl,
     bool? isFavourite,
@@ -123,6 +135,7 @@ class Track {
       localId: localId ?? this.localId,
       localUri: localUri ?? this.localUri,
       streamUrl: streamUrl ?? this.streamUrl,
+      assetPath: assetPath ?? this.assetPath,
       artworkUri: artworkUri ?? this.artworkUri,
       licenseUrl: licenseUrl ?? this.licenseUrl,
       isFavourite: isFavourite ?? this.isFavourite,

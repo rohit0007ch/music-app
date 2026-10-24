@@ -16,6 +16,7 @@ class FavoriteRecord {
     this.localId,
     this.localUri,
     this.streamUrl,
+    this.assetPath,
     this.artworkUri,
     this.licenseUrl,
     this.genre = '',
@@ -31,6 +32,7 @@ class FavoriteRecord {
   final int? localId;
   final String? localUri;
   final String? streamUrl;
+  final String? assetPath;
   final String? artworkUri;
   final String? licenseUrl;
   final String genre;
@@ -48,6 +50,7 @@ class FavoriteRecord {
       localId: track.localId,
       localUri: track.localUri,
       streamUrl: track.streamUrl,
+      assetPath: track.assetPath,
       artworkUri: track.artworkUri,
       licenseUrl: track.licenseUrl,
       genre: track.genre,
@@ -67,6 +70,7 @@ class FavoriteRecord {
       localId: localId,
       localUri: localUri,
       streamUrl: streamUrl,
+      assetPath: assetPath,
       artworkUri: artworkUri,
       licenseUrl: licenseUrl,
       isFavourite: true,
@@ -86,6 +90,7 @@ class FavoriteRecord {
       if (localId != null) 'localId': localId,
       if (localUri != null) 'localUri': localUri,
       if (streamUrl != null) 'streamUrl': streamUrl,
+      if (assetPath != null) 'assetPath': assetPath,
       if (artworkUri != null) 'artworkUri': artworkUri,
       if (licenseUrl != null) 'licenseUrl': licenseUrl,
       if (genre.isNotEmpty) 'genre': genre,
@@ -120,6 +125,7 @@ class FavoriteRecord {
       localId: _asInt(map['localId']),
       localUri: _optionalString(map['localUri']),
       streamUrl: _optionalString(map['streamUrl']),
+      assetPath: _optionalString(map['assetPath']),
       artworkUri: _optionalString(map['artworkUri']),
       licenseUrl: _optionalString(map['licenseUrl']),
       genre: _stringOr(map['genre'], ''),

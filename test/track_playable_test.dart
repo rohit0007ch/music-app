@@ -5,6 +5,7 @@ Track _track({
   TrackSource source = TrackSource.mock,
   String? localUri,
   String? streamUrl,
+  String? assetPath,
 }) {
   return Track(
     id: 't',
@@ -16,6 +17,7 @@ Track _track({
     source: source,
     localUri: localUri,
     streamUrl: streamUrl,
+    assetPath: assetPath,
   );
 }
 
@@ -74,6 +76,28 @@ void main() {
           streamUrl: 'https://example.com/a.mp3',
         ).playbackUri,
         'https://example.com/a.mp3',
+      );
+    });
+
+    test('asset tracks require a non-empty assetPath', () {
+      expect(_track(source: TrackSource.asset).isPlayable, isFalse);
+      expect(
+        _track(source: TrackSource.asset, assetPath: '').isPlayable,
+        isFalse,
+      );
+      expect(
+        _track(
+          source: TrackSource.asset,
+          assetPath: 'assets/audio/dinesh.mp3',
+        ).isPlayable,
+        isTrue,
+      );
+      expect(
+        _track(
+          source: TrackSource.asset,
+          assetPath: 'assets/audio/dinesh.mp3',
+        ).playbackUri,
+        'assets/audio/dinesh.mp3',
       );
     });
   });
