@@ -15,15 +15,8 @@ abstract final class FeaturedSong {
   static const String audioAssetPath = 'assets/audio/dinesh.mp3';
   static const String lyricsAssetPath = 'assets/lyrics/dinesh_dalla.txt';
 
-  /// Drop the supplied thumbnail at one of these paths, then set
-  /// [artworkAssetPath] to that path so MeloraArtwork loads it.
-  /// Leave `null` until the image is in the project (gradient fallback).
-  static const String? artworkAssetPath = null;
-
-  /// Preferred drop locations (document for the user; not auto-scanned).
-  static const String preferredArtworkJpg =
-      'assets/images/featured/dinesh_dalla.jpg';
-  static const String preferredArtworkPng =
+  /// Bundled square thumbnail for the featured card / Now Playing / mini-player.
+  static const String artworkAssetPath =
       'assets/images/featured/dinesh_dalla.png';
 
   /// Estimated duration from the bundled MP3 (~171.5 s).

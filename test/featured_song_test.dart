@@ -1,4 +1,8 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:melora_music/data/featured/featured_song.dart';
@@ -6,6 +10,7 @@ import 'package:melora_music/data/models/lyrics.dart';
 import 'package:melora_music/data/models/track.dart';
 import 'package:melora_music/data/repositories/lyrics_repository.dart';
 import 'package:melora_music/screens/home/home_screen.dart';
+import 'package:melora_music/services/asset_audio_cache_io.dart';
 import 'package:melora_music/services/audio_engine.dart';
 import 'package:melora_music/viewmodels/lyrics_state.dart';
 import 'package:melora_music/viewmodels/player_state.dart';
@@ -15,8 +20,23 @@ class _RecordingEngine extends AudioEngine {
 
   @override
   Future<void> play(Track track) async {
+    // Validate source without writing temp files or decoding audio.
     AudioEngine.resolveAudioSource(track);
     playedIds.add(track.id);
+  }
+}
+
+class _ByteBundle extends CachingAssetBundle {
+  _ByteBundle(this.bytesByKey);
+  final Map<String, List<int>> bytesByKey;
+
+  @override
+  Future<ByteData> load(String key) async {
+    final bytes = bytesByKey[key];
+    if (bytes == null) {
+      throw FlutterError('Unable to load asset: "$key"');
+    }
+    return ByteData.sublistView(Uint8List.fromList(bytes));
   }
 }
 
@@ -51,6 +71,7 @@ void main() {
       expect(track.artist, 'Dinesh');
       expect(track.source, TrackSource.asset);
       expect(track.assetPath, 'assets/audio/dinesh.mp3');
+      expect(track.artworkUri, 'assets/images/featured/dinesh_dalla.png');
       expect(track.isPlayable, isTrue);
       expect(track.playbackUri, 'assets/audio/dinesh.mp3');
     });
@@ -93,6 +114,51 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+
+    test(
+      'prepareAudioSource materializes asset tracks to a file URI',
+      () async {
+        final dir = await Directory.systemTemp.createTemp('melora_asset_prep_');
+        addTearDown(() {
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        });
+        final bundle = _ByteBundle({
+          FeaturedSong.audioAssetPath: List<int>.filled(64, 7),
+        });
+
+        // Override cache by materializing first, then building the source via
+        // the same path the engine uses for playback.
+        final file = await materializeAssetFile(
+          trackId: FeaturedSong.id,
+          assetPath: FeaturedSong.audioAssetPath,
+          bundle: bundle,
+          cacheDirectory: dir,
+        );
+        expect(await file.exists(), isTrue);
+        expect(await file.length(), 64);
+
+        final again = await materializeAssetFile(
+          trackId: FeaturedSong.id,
+          assetPath: FeaturedSong.audioAssetPath,
+          bundle: bundle,
+          cacheDirectory: dir,
+        );
+        expect(again.path, file.path);
+        expect((await again.readAsBytes()).length, 64);
+      },
+    );
+
+    test(
+      'prepareAudioSource uses a file URI for featured assets on VM',
+      () async {
+        final source = await AudioEngine.prepareAudioSource(FeaturedSong.track);
+        expect(source, isA<UriAudioSource>());
+        final uri = (source as UriAudioSource).uri;
+        expect(uri.scheme, 'file');
+        expect(File(uri.toFilePath()).existsSync(), isTrue);
+        expect(File(uri.toFilePath()).lengthSync(), greaterThan(1000));
+      },
+    );
   });
 
   group('Featured queue behavior', () {

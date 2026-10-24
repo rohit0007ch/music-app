@@ -1,7 +1,11 @@
 import 'package:audio_session/audio_session.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:melora_music/data/models/track.dart';
+import 'package:melora_music/services/asset_audio_cache_io.dart'
+    if (dart.library.html) 'package:melora_music/services/asset_audio_cache_web.dart'
+    as asset_cache;
 
 /// Thin wrapper around [AudioPlayer] from `just_audio`.
 ///
@@ -35,9 +39,8 @@ class AudioEngine {
   /// (mock, missing URI/path, wrong scheme for source). Callers must not invoke
   /// this for demo tracks.
   Future<void> play(Track track) async {
-    // Validate before any async player work so failures stay synchronous and
-    // do not leave just_audio mid-load.
-    final source = resolveAudioSource(track);
+    // Validate / prepare before touching the player so failures stay clear.
+    final source = await prepareAudioSource(track);
 
     await _ensureSessionConfigured();
     await _player.setAudioSource(source);
@@ -56,26 +59,33 @@ class AudioEngine {
 
   // ── Source resolution (testable without a live player) ────────────────────
 
-  /// Builds a tagged [AudioSource] for [track].
+  /// Prepares a tagged [AudioSource] ready for [AudioPlayer.setAudioSource].
   ///
-  /// - [TrackSource.online] → [AudioSource.uri] http(s)
-  /// - [TrackSource.local] → [AudioSource.uri] file/content/…
-  /// - [TrackSource.asset] → [AudioSource.asset]
-  /// - [TrackSource.mock] → always rejected
+  /// - **Web:** [AudioSource.asset] (no filesystem).
+  /// - **Mobile/desktop:** asset bytes are copied to a temp file and played as
+  ///   `file://`, which is more reliable with `just_audio_background`.
+  static Future<AudioSource> prepareAudioSource(Track track) async {
+    final tag = _mediaItemFor(track);
+
+    if (track.source == TrackSource.asset) {
+      final path = validateAssetPath(track);
+      return asset_cache.cachedAssetAudioSource(
+        trackId: track.id,
+        assetPath: path,
+        tag: tag,
+      );
+    }
+
+    final uri = resolvePlaybackUri(track);
+    return AudioSource.uri(uri, tag: tag);
+  }
+
+  /// Sync resolver used by unit tests. Asset tracks return [AudioSource.asset].
   static AudioSource resolveAudioSource(Track track) {
     final tag = _mediaItemFor(track);
 
     if (track.source == TrackSource.asset) {
-      final path = track.assetPath?.trim();
-      if (path == null || path.isEmpty) {
-        throw ArgumentError('Asset track "${track.title}" has no assetPath.');
-      }
-      if (!path.startsWith('assets/')) {
-        throw ArgumentError(
-          'Asset track "${track.title}" path must start with "assets/", '
-          'got "$path".',
-        );
-      }
+      final path = validateAssetPath(track);
       return AudioSource.asset(path, tag: tag);
     }
 
@@ -83,15 +93,25 @@ class AudioEngine {
     return AudioSource.uri(uri, tag: tag);
   }
 
+  /// Validates [Track.assetPath] for a bundled track.
+  static String validateAssetPath(Track track) {
+    final path = track.assetPath?.trim();
+    if (path == null || path.isEmpty) {
+      throw ArgumentError('Asset track "${track.title}" has no assetPath.');
+    }
+    if (!path.startsWith('assets/')) {
+      throw ArgumentError(
+        'Asset track "${track.title}" path must start with "assets/", '
+        'got "$path".',
+      );
+    }
+    return path;
+  }
+
   /// Resolves and validates a URI for local/online playback.
   ///
-  /// Asset tracks should use [resolveAudioSource] — this method still returns
+  /// Asset tracks should use [prepareAudioSource] — this method still returns
   /// a synthetic `asset:` [Uri] for tests that assert path identity.
-  ///
-  /// - [TrackSource.online] → http(s) [Track.streamUrl]
-  /// - [TrackSource.local] → non-http(s) [Track.localUri] (content/file/…)
-  /// - [TrackSource.asset] → `asset:` URI whose path is [Track.assetPath]
-  /// - [TrackSource.mock] → always rejected
   static Uri resolvePlaybackUri(Track track) {
     if (track.source == TrackSource.mock) {
       throw ArgumentError(
@@ -101,15 +121,7 @@ class AudioEngine {
     }
 
     if (track.source == TrackSource.asset) {
-      final path = track.assetPath?.trim();
-      if (path == null || path.isEmpty) {
-        throw ArgumentError('Track "${track.title}" (asset) has no assetPath.');
-      }
-      if (!path.startsWith('assets/')) {
-        throw ArgumentError(
-          'Asset path must start with "assets/", got "$path".',
-        );
-      }
+      final path = validateAssetPath(track);
       return Uri(scheme: 'asset', path: path);
     }
 
@@ -158,6 +170,7 @@ class AudioEngine {
 
   Future<void> _ensureSessionConfigured() async {
     if (_sessionConfigured) return;
+    // audio_session is a no-op / limited on web; still safe to configure.
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
     _sessionConfigured = true;
@@ -182,4 +195,7 @@ class AudioEngine {
     if (value.startsWith('assets/')) return null;
     return Uri.tryParse(value);
   }
+
+  /// Whether this engine path is running in a browser.
+  static bool get isWeb => kIsWeb;
 }
