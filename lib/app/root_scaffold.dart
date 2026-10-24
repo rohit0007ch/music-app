@@ -33,7 +33,8 @@ class RootScaffold extends StatefulWidget {
   State<RootScaffold> createState() => _RootScaffoldState();
 }
 
-class _RootScaffoldState extends State<RootScaffold> {
+class _RootScaffoldState extends State<RootScaffold>
+    with WidgetsBindingObserver {
   int _currentIndex = 0;
   late final PlayerState _playerState;
   late final LocalLibraryState _libraryState;
@@ -47,6 +48,7 @@ class _RootScaffoldState extends State<RootScaffold> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _ownsPlayer = widget.playerState == null;
     _ownsLibrary = widget.libraryState == null;
     _ownsFavorites = widget.favoritesState == null;
@@ -66,12 +68,20 @@ class _RootScaffoldState extends State<RootScaffold> {
     _playlistsState.load();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _playerState.refreshSleepTimerAfterResume();
+    }
+  }
+
   void _syncFavouriteFlags() {
     _playerState.syncFavouriteFlags(_favoritesState.isFavorite);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _favoritesState.removeListener(_syncFavouriteFlags);
     if (_ownsPlayer) _playerState.dispose();
     if (_ownsLibrary) _libraryState.dispose();

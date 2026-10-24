@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Online catalog / HTTPS streams (Jamendo). Required in release builds;
+         debug/profile manifests already declare INTERNET for tooling. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <!-- Storage: API ≤32 needs READ_EXTERNAL_STORAGE; API 33+ needs READ_MEDIA_AUDIO -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>

@@ -48,6 +48,8 @@ void main() {
 
     player.setQueue([playableA, demo, playableB]);
     player.debugSetCurrentTrack(playableA, isPlaying: true);
+    // Enable wrap so previous from the first track can reach the last.
+    player.cycleRepeat(); // none -> all
 
     expect(player.debugPeekRelative(1)?.id, playableB.id);
     expect(player.debugPeekRelative(-1)?.id, playableB.id);
@@ -59,5 +61,15 @@ void main() {
     expect(player.isShuffle, isTrue);
     player.toggleShuffle();
     expect(player.isShuffle, isFalse);
+  });
+
+  test('cycleRepeat walks none → all → one → none', () {
+    expect(player.repeatMode, RepeatMode.none);
+    player.cycleRepeat();
+    expect(player.repeatMode, RepeatMode.all);
+    player.cycleRepeat();
+    expect(player.repeatMode, RepeatMode.one);
+    player.cycleRepeat();
+    expect(player.repeatMode, RepeatMode.none);
   });
 }

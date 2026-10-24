@@ -21,7 +21,9 @@ enum RepeatMode { none, all, one }
 /// a playable track is current leaves that track alone and surfaces
 /// [demoNotPlayableMessage] for the UI.
 class MeloraPlayerState extends ChangeNotifier {
-  MeloraPlayerState({AudioEngine? engine}) : _engine = engine ?? AudioEngine() {
+  MeloraPlayerState({AudioEngine? engine, DateTime Function()? clock})
+    : _engine = engine ?? AudioEngine(),
+      _clock = clock ?? DateTime.now {
     _queue = List<Track>.from(MockData.tracks);
     _subscribeToEngine();
   }
@@ -30,7 +32,11 @@ class MeloraPlayerState extends ChangeNotifier {
   static const String demoNotPlayableMessage =
       "This demo track isn't playable yet.";
 
+  static const String _genericPlaybackError =
+      'Could not play this track. Try another song or check your connection.';
+
   final AudioEngine _engine;
+  final DateTime Function() _clock;
   final Random _random = Random();
 
   Track? _currentTrack;
@@ -43,9 +49,16 @@ class MeloraPlayerState extends ChangeNotifier {
   List<Track> _queue = [];
   List<int> _shuffleOrder = [];
   int? _sleepTimerMinutes;
+  DateTime? _sleepTimerDeadline;
   Timer? _sleepTimer;
+  int _sleepTimerGeneration = 0;
+  bool _sleepTimerFired = false;
   String? _error;
   String? _userMessage;
+  ja.ProcessingState _processingState = ja.ProcessingState.idle;
+
+  /// Monotonic token so a slower [playTrack] cannot overwrite a newer one.
+  int _playGeneration = 0;
 
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration?>? _durationSub;
@@ -61,11 +74,38 @@ class MeloraPlayerState extends ChangeNotifier {
   Duration get position => _position;
   Duration get duration => _duration;
   List<Track> get queue => List.unmodifiable(_queue);
+
+  /// Preset minutes originally chosen for the active sleep timer, if any.
   int? get sleepTimerMinutes => _sleepTimerMinutes;
+
+  /// Absolute deadline for the active sleep timer.
+  DateTime? get sleepTimerDeadline => _sleepTimerDeadline;
+
+  /// Remaining time until pause; `null` when inactive.
+  Duration? get sleepTimerRemaining {
+    final deadline = _sleepTimerDeadline;
+    if (deadline == null) return null;
+    final remaining = deadline.difference(_clock());
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
+  bool get hasActiveSleepTimer => _sleepTimerDeadline != null;
 
   /// Whether [currentTrack] has a real audio source.
   bool get isCurrentPlayable =>
       _currentTrack != null && _currentTrack!.isPlayable;
+
+  /// True while the engine is loading or buffering the current source.
+  bool get isBuffering =>
+      _processingState == ja.ProcessingState.loading ||
+      _processingState == ja.ProcessingState.buffering;
+
+  /// Whether skip-next has a target (respects [RepeatMode.none] boundaries).
+  bool get canSkipNext => _findRelativeTrack(1) != null;
+
+  /// Whether skip-previous can change tracks (restart-from-start still works
+  /// separately when position is past 3 seconds).
+  bool get canSkipPrevious => _findRelativeTrack(-1) != null;
 
   /// Non-null when the audio engine raised an error on the last operation.
   String? get error => _error;
@@ -94,6 +134,8 @@ class MeloraPlayerState extends ChangeNotifier {
   /// When [queueContext] is provided, the queue is replaced first (e.g. local
   /// library songs). Returns `true` when the engine was asked to play.
   Future<bool> playTrack(Track track, {List<Track>? queueContext}) async {
+    final generation = ++_playGeneration;
+
     if (queueContext != null) {
       _queue = List<Track>.from(queueContext);
       _rebuildShuffleOrder();
@@ -113,6 +155,7 @@ class MeloraPlayerState extends ChangeNotifier {
         _position = Duration.zero;
         _duration = Duration.zero;
         _error = null;
+        _processingState = ja.ProcessingState.idle;
       }
       notifyListeners();
       return false;
@@ -121,16 +164,23 @@ class MeloraPlayerState extends ChangeNotifier {
     _userMessage = null;
     _error = null;
     _currentTrack = track;
+    _processingState = ja.ProcessingState.loading;
     // Snapshot queue identity so a failed load cannot be confused with a
     // queue mutation (play must not alter [_queue] on error).
     final queueLengthBefore = _queue.length;
+    notifyListeners();
 
     try {
       await _engine.play(track);
+      if (generation != _playGeneration) return false;
     } catch (e) {
-      _error = e.toString();
+      if (generation != _playGeneration) return false;
+      final friendly = _friendlyPlaybackError(e);
+      _error = friendly;
+      _userMessage = friendly;
       _isPlaying = false;
       _progress = 0.0;
+      _processingState = ja.ProcessingState.idle;
       // Keep [_currentTrack] as the attempted track so the UI can show the
       // error; never roll the queue back except to assert stability.
       assert(_queue.length == queueLengthBefore);
@@ -224,19 +274,80 @@ class MeloraPlayerState extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  /// Starts, replaces, or cancels the sleep timer.
+  ///
+  /// Uses an absolute [DateTime] deadline so missed ticks after backgrounding
+  /// do not extend the intended duration. Session-scoped only — not persisted.
+  /// Invalid or non-positive [minutes] cancels any active timer.
   void setSleepTimer(int? minutes) {
+    _cancelSleepTimerInternal(clearDeadline: true);
+
+    if (minutes == null || minutes <= 0) {
+      notifyListeners();
+      return;
+    }
+
+    final generation = ++_sleepTimerGeneration;
+    _sleepTimerFired = false;
+    _sleepTimerMinutes = minutes;
+    _sleepTimerDeadline = _clock().add(Duration(minutes: minutes));
+    _scheduleSleepTimer(generation);
+    notifyListeners();
+  }
+
+  /// Recalculates remaining time after the app resumes from background.
+  ///
+  /// If the deadline already passed while suspended, pauses once. Does not
+  /// guarantee execution while the process is killed.
+  void refreshSleepTimerAfterResume() {
+    final deadline = _sleepTimerDeadline;
+    if (deadline == null) return;
+
+    final remaining = deadline.difference(_clock());
+    if (remaining <= Duration.zero) {
+      _onSleepTimerExpired(_sleepTimerGeneration);
+      return;
+    }
+
+    _sleepTimer?.cancel();
+    _scheduleSleepTimer(_sleepTimerGeneration);
+    notifyListeners();
+  }
+
+  void _scheduleSleepTimer(int generation) {
+    final deadline = _sleepTimerDeadline;
+    if (deadline == null) return;
+    var remaining = deadline.difference(_clock());
+    if (remaining < Duration.zero) remaining = Duration.zero;
+    _sleepTimer = Timer(remaining, () => _onSleepTimerExpired(generation));
+  }
+
+  void _cancelSleepTimerInternal({required bool clearDeadline}) {
     _sleepTimer?.cancel();
     _sleepTimer = null;
-    _sleepTimerMinutes = minutes;
-    if (minutes != null && minutes > 0) {
-      _sleepTimer = Timer(Duration(minutes: minutes), () async {
-        _sleepTimerMinutes = null;
-        _sleepTimer = null;
-        if (_currentTrack != null && _currentTrack!.isPlayable && _isPlaying) {
-          await _engine.pause();
-        }
-        notifyListeners();
-      });
+    if (clearDeadline) {
+      _sleepTimerMinutes = null;
+      _sleepTimerDeadline = null;
+      _sleepTimerFired = false;
+      _sleepTimerGeneration++;
+    }
+  }
+
+  Future<void> _onSleepTimerExpired(int generation) async {
+    if (generation != _sleepTimerGeneration) return;
+    if (_sleepTimerFired) return;
+    _sleepTimerFired = true;
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepTimerMinutes = null;
+    _sleepTimerDeadline = null;
+
+    try {
+      if (_currentTrack != null && _currentTrack!.isPlayable && _isPlaying) {
+        await _engine.pause();
+      }
+    } catch (_) {
+      // Pause failures must not crash or orphan timer state.
     }
     notifyListeners();
   }
@@ -293,6 +404,8 @@ class MeloraPlayerState extends ChangeNotifier {
 
   /// Finds the next/previous track. When the current track is playable, skips
   /// non-playable demos so they cannot interrupt real audio.
+  ///
+  /// With [RepeatMode.none], does not wrap past the ends of the queue.
   Track? _findRelativeTrack(int direction) {
     if (_queue.isEmpty || _currentTrack == null) return null;
     final order = _orderedQueue();
@@ -300,8 +413,13 @@ class MeloraPlayerState extends ChangeNotifier {
     if (start < 0) return order.first;
 
     final preferPlayable = _currentTrack!.isPlayable;
+    final wrap = _repeatMode != RepeatMode.none;
     for (var step = 1; step <= order.length; step++) {
-      final index = _wrapIndex(start + direction * step, order.length);
+      final raw = start + direction * step;
+      if (!wrap && (raw < 0 || raw >= order.length)) {
+        return null;
+      }
+      final index = wrap ? _wrapIndex(raw, order.length) : raw;
       final candidate = order[index];
       if (!preferPlayable || candidate.isPlayable) {
         return candidate;
@@ -311,6 +429,28 @@ class MeloraPlayerState extends ChangeNotifier {
   }
 
   int _wrapIndex(int index, int length) => (index % length + length) % length;
+
+  static String _friendlyPlaybackError(Object error) {
+    final text = error.toString().toLowerCase();
+    if (error is ArgumentError || error is FormatException) {
+      return 'This track cannot be played.';
+    }
+    if (text.contains('socketexception') ||
+        text.contains('failed host lookup') ||
+        text.contains('network') ||
+        text.contains('connection') ||
+        text.contains('timed out') ||
+        text.contains('timeout')) {
+      return 'Could not reach this track. Check your connection and try again.';
+    }
+    if (text.contains('404') ||
+        text.contains('403') ||
+        text.contains('source error') ||
+        text.contains('unable to load')) {
+      return 'This track is unavailable right now.';
+    }
+    return _genericPlaybackError;
+  }
 
   // ── Engine stream subscriptions ───────────────────────────────────────────
 
@@ -331,13 +471,20 @@ class MeloraPlayerState extends ChangeNotifier {
 
     _stateSub = _engine.playerStateStream.listen((state) {
       final wasPlaying = _isPlaying;
+      final wasBuffering = isBuffering;
+      final prevProcessing = _processingState;
       _isPlaying = state.playing;
+      _processingState = state.processingState;
       // Auto-advance queue on natural completion.
       if (state.processingState == ja.ProcessingState.completed) {
         _isPlaying = false;
         _handleTrackCompletion();
       }
-      if (wasPlaying != _isPlaying) notifyListeners();
+      if (wasPlaying != _isPlaying ||
+          wasBuffering != isBuffering ||
+          prevProcessing != _processingState) {
+        notifyListeners();
+      }
     });
   }
 

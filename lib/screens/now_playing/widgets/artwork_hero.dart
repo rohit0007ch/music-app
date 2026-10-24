@@ -7,10 +7,12 @@ class ArtworkHero extends StatelessWidget {
     super.key,
     required this.paletteIndex,
     required this.isPlaying,
+    this.imageUrl,
   });
 
   final int paletteIndex;
   final bool isPlaying;
+  final String? imageUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +25,7 @@ class ArtworkHero extends StatelessWidget {
         paletteIndex: paletteIndex,
         size: size,
         borderRadius: 24,
+        imageUrl: imageUrl,
       ),
     );
   }

@@ -24,7 +24,8 @@ class ProgressBarWidget extends StatelessWidget {
               ),
               child: Slider(
                 value: playerState.progress,
-                onChanged: playerState.isCurrentPlayable
+                onChanged:
+                    playerState.isCurrentPlayable && !playerState.isBuffering
                     ? playerState.seekTo
                     : null,
                 activeColor: AppColors.accentViolet,

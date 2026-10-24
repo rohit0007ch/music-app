@@ -57,30 +57,38 @@ class QueueSheet extends StatelessWidget {
                   ),
                   const Divider(height: 1),
                   Expanded(
-                    child: ListView.builder(
-                      controller: scroll,
-                      itemCount: queue.length,
-                      itemBuilder: (context, index) {
-                        final track = queue[index];
-                        return MeloraTrackTile(
-                          track: track,
-                          isPlaying: track.id == playerState.currentTrack?.id,
-                          onTap: () async {
-                            await playerState.playTrack(track);
-                            if (!context.mounted) return;
-                            final message = playerState.takeUserMessage();
-                            if (message != null) {
-                              ScaffoldMessenger.of(context)
-                                ..hideCurrentSnackBar()
-                                ..showSnackBar(
-                                  SnackBar(content: Text(message)),
-                                );
-                            }
-                            Navigator.pop(context);
-                          },
-                        );
-                      },
-                    ),
+                    child: queue.isEmpty
+                        ? Center(
+                            child: Text(
+                              'Queue is empty',
+                              style: AppTextStyles.bodyMedium,
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scroll,
+                            itemCount: queue.length,
+                            itemBuilder: (context, index) {
+                              final track = queue[index];
+                              return MeloraTrackTile(
+                                track: track,
+                                isPlaying:
+                                    track.id == playerState.currentTrack?.id,
+                                onTap: () async {
+                                  await playerState.playTrack(track);
+                                  if (!context.mounted) return;
+                                  final message = playerState.takeUserMessage();
+                                  if (message != null) {
+                                    ScaffoldMessenger.of(context)
+                                      ..hideCurrentSnackBar()
+                                      ..showSnackBar(
+                                        SnackBar(content: Text(message)),
+                                      );
+                                  }
+                                  Navigator.pop(context);
+                                },
+                              );
+                            },
+                          ),
                   ),
                 ],
               );

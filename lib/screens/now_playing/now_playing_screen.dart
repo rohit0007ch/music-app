@@ -118,6 +118,7 @@ class NowPlayingScreen extends StatelessWidget {
                       child: Row(
                         children: [
                           IconButton(
+                            tooltip: 'Close',
                             icon: const Icon(
                               Icons.keyboard_arrow_down_rounded,
                               size: 30,
@@ -144,6 +145,7 @@ class NowPlayingScreen extends StatelessWidget {
                             ),
                           ),
                           IconButton(
+                            tooltip: 'Add to playlist',
                             icon: const Icon(Icons.more_vert_rounded),
                             onPressed: () => showAddToPlaylistSheet(
                               context: context,
@@ -162,6 +164,7 @@ class NowPlayingScreen extends StatelessWidget {
                     ArtworkHero(
                       paletteIndex: track.paletteIndex,
                       isPlaying: playerState.isPlaying,
+                      imageUrl: track.artworkUri,
                     ),
 
                     const Spacer(),
@@ -192,6 +195,9 @@ class NowPlayingScreen extends StatelessWidget {
                             ),
                           ),
                           IconButton(
+                            tooltip: isFavourite
+                                ? 'Remove from favourites'
+                                : 'Add to favourites',
                             icon: Icon(
                               isFavourite
                                   ? Icons.favorite_rounded
@@ -219,6 +225,20 @@ class NowPlayingScreen extends StatelessWidget {
                           MeloraPlayerState.demoNotPlayableMessage,
                           style: AppTextStyles.bodyMedium.copyWith(
                             color: AppColors.accentAmber,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ] else if (playerState.error != null) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg,
+                        ),
+                        child: Text(
+                          playerState.error!,
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.error,
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -254,7 +274,7 @@ class NowPlayingScreen extends StatelessWidget {
                             icon: Icons.bedtime_rounded,
                             label: 'Sleep',
                             onTap: () => _showSleepTimer(context),
-                            isActive: playerState.sleepTimerMinutes != null,
+                            isActive: playerState.hasActiveSleepTimer,
                           ),
                           _BottomAction(
                             icon: Icons.graphic_eq_rounded,

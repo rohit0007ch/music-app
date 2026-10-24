@@ -28,6 +28,18 @@ class MeloraMiniPlayer extends StatelessWidget {
         final track = playerState.currentTrack;
         if (track == null) return const SizedBox.shrink();
         final playable = track.isPlayable;
+        final buffering = playerState.isBuffering;
+        final canPrev =
+            playable &&
+            (playerState.position.inSeconds > 3 || playerState.canSkipPrevious);
+        final canNext = playable && playerState.canSkipNext;
+        final subtitle = !playable
+            ? 'Demo · not playable'
+            : playerState.error != null
+            ? playerState.error!
+            : buffering
+            ? 'Loading…'
+            : track.artist;
 
         return GestureDetector(
           onTap: onTap,
@@ -56,6 +68,7 @@ class MeloraMiniPlayer extends StatelessWidget {
                   paletteIndex: track.paletteIndex,
                   size: 48,
                   borderRadius: AppSpacing.radiusSm,
+                  imageUrl: track.artworkUri,
                 ),
                 const SizedBox(width: AppSpacing.sm + 2),
                 Expanded(
@@ -70,8 +83,12 @@ class MeloraMiniPlayer extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
-                        playable ? track.artist : 'Demo · not playable',
-                        style: AppTextStyles.bodyMedium,
+                        subtitle,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: playerState.error != null
+                              ? AppColors.error
+                              : null,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -79,35 +96,58 @@ class MeloraMiniPlayer extends StatelessWidget {
                   ),
                 ),
                 IconButton(
+                  tooltip: 'Previous',
                   icon: const Icon(Icons.skip_previous_rounded, size: 22),
-                  color: AppColors.textSecondary,
-                  onPressed: () async {
-                    await playerState.skipPrevious();
-                    onControlMessage?.call();
-                  },
+                  color: canPrev
+                      ? AppColors.textSecondary
+                      : AppColors.textDisabled,
+                  onPressed: !canPrev
+                      ? null
+                      : () async {
+                          await playerState.skipPrevious();
+                          onControlMessage?.call();
+                        },
                 ),
                 IconButton(
-                  icon: Icon(
-                    playerState.isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-                    size: 28,
-                  ),
-                  color: playable
+                  tooltip: buffering
+                      ? 'Loading'
+                      : playerState.isPlaying
+                      ? 'Pause'
+                      : 'Play',
+                  icon: buffering
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          playerState.isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          size: 28,
+                        ),
+                  color: playable && !buffering
                       ? AppColors.accentViolet
                       : AppColors.textDisabled,
-                  onPressed: () async {
-                    await playerState.togglePlayPause();
-                    onControlMessage?.call();
-                  },
+                  onPressed: !playable || buffering
+                      ? null
+                      : () async {
+                          await playerState.togglePlayPause();
+                          onControlMessage?.call();
+                        },
                 ),
                 IconButton(
+                  tooltip: 'Next',
                   icon: const Icon(Icons.skip_next_rounded, size: 22),
-                  color: AppColors.textSecondary,
-                  onPressed: () async {
-                    await playerState.skipNext();
-                    onControlMessage?.call();
-                  },
+                  color: canNext
+                      ? AppColors.textSecondary
+                      : AppColors.textDisabled,
+                  onPressed: !canNext
+                      ? null
+                      : () async {
+                          await playerState.skipNext();
+                          onControlMessage?.call();
+                        },
                 ),
                 const SizedBox(width: AppSpacing.xs),
               ],
