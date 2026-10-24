@@ -9,6 +9,7 @@ import 'package:melora_music/theme/app_theme.dart';
 import 'package:melora_music/viewmodels/favorites_state.dart';
 import 'package:melora_music/viewmodels/local_library_state.dart';
 import 'package:melora_music/viewmodels/player_state.dart';
+import 'package:melora_music/viewmodels/playlists_state.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeFavoritesRepository implements FavoritesRepository {
@@ -157,6 +158,7 @@ void main() {
           home: NowPlayingScreen(
             playerState: player,
             favoritesState: favorites,
+            playlistsState: PlaylistsState()..load(),
           ),
         ),
       );
@@ -207,6 +209,7 @@ void main() {
             body: NowPlayingScreen(
               playerState: player,
               favoritesState: favorites,
+              playlistsState: PlaylistsState()..load(),
             ),
           ),
         ),
@@ -244,6 +247,7 @@ void main() {
               playerState: player,
               libraryState: library,
               favoritesState: favorites,
+              playlistsState: PlaylistsState()..load(),
               onTrackTap: (_, {queueContext}) async {},
             ),
           ),
@@ -280,6 +284,7 @@ void main() {
               playerState: player,
               libraryState: library,
               favoritesState: favorites,
+              playlistsState: PlaylistsState()..load(),
               onTrackTap: (_, {queueContext}) async {},
             ),
           ),
@@ -313,6 +318,7 @@ void main() {
               playerState: player,
               libraryState: library,
               favoritesState: favorites,
+              playlistsState: PlaylistsState()..load(),
               onTrackTap: (_, {queueContext}) async {},
             ),
           ),

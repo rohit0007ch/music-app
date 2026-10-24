@@ -6,21 +6,25 @@ import 'package:melora_music/screens/now_playing/sheets/sleep_timer_dialog.dart'
 import 'package:melora_music/screens/now_playing/widgets/artwork_hero.dart';
 import 'package:melora_music/screens/now_playing/widgets/playback_controls.dart';
 import 'package:melora_music/screens/now_playing/widgets/progress_bar_widget.dart';
+import 'package:melora_music/shared/widgets/add_to_playlist_sheet.dart';
 import 'package:melora_music/theme/app_colors.dart';
 import 'package:melora_music/theme/app_spacing.dart';
 import 'package:melora_music/theme/app_text_styles.dart';
 import 'package:melora_music/viewmodels/favorites_state.dart';
 import 'package:melora_music/viewmodels/player_state.dart';
+import 'package:melora_music/viewmodels/playlists_state.dart';
 
 class NowPlayingScreen extends StatelessWidget {
   const NowPlayingScreen({
     super.key,
     required this.playerState,
     required this.favoritesState,
+    required this.playlistsState,
   });
 
   final PlayerState playerState;
   final FavoritesState favoritesState;
+  final PlaylistsState playlistsState;
 
   void _showQueue(BuildContext context) => showModalBottomSheet(
     context: context,
@@ -141,14 +145,11 @@ class NowPlayingScreen extends StatelessWidget {
                           ),
                           IconButton(
                             icon: const Icon(Icons.more_vert_rounded),
-                            onPressed: () =>
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Track options — coming soon',
-                                    ),
-                                  ),
-                                ),
+                            onPressed: () => showAddToPlaylistSheet(
+                              context: context,
+                              track: track,
+                              playlistsState: playlistsState,
+                            ),
                             color: AppColors.textSecondary,
                           ),
                         ],

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:melora_music/data/mock/mock_data.dart';
 import 'package:melora_music/data/models/favorite_record.dart';
 import 'package:melora_music/data/models/track.dart';
+import 'package:melora_music/screens/library/playlist_detail_screen.dart';
+import 'package:melora_music/shared/widgets/add_to_playlist_sheet.dart';
 import 'package:melora_music/shared/widgets/melora_artwork.dart';
 import 'package:melora_music/shared/widgets/melora_empty_state.dart';
 import 'package:melora_music/shared/widgets/melora_track_tile.dart';
@@ -11,6 +13,7 @@ import 'package:melora_music/theme/app_text_styles.dart';
 import 'package:melora_music/viewmodels/favorites_state.dart';
 import 'package:melora_music/viewmodels/local_library_state.dart';
 import 'package:melora_music/viewmodels/player_state.dart';
+import 'package:melora_music/viewmodels/playlists_state.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({
@@ -18,12 +21,14 @@ class LibraryScreen extends StatefulWidget {
     required this.playerState,
     required this.libraryState,
     required this.favoritesState,
+    required this.playlistsState,
     required this.onTrackTap,
   });
 
   final PlayerState playerState;
   final LocalLibraryState libraryState;
   final FavoritesState favoritesState;
+  final PlaylistsState playlistsState;
   final Future<void> Function(Track track, {List<Track>? queueContext})
   onTrackTap;
 
@@ -103,6 +108,8 @@ class _LibraryScreenState extends State<LibraryScreen>
               _SongsTab(
                 playerState: widget.playerState,
                 libraryState: widget.libraryState,
+                favoritesState: widget.favoritesState,
+                playlistsState: widget.playlistsState,
                 onTrackTap: widget.onTrackTap,
               ),
               const _AlbumsTab(),
@@ -113,7 +120,12 @@ class _LibraryScreenState extends State<LibraryScreen>
                 favoritesState: widget.favoritesState,
                 onTrackTap: widget.onTrackTap,
               ),
-              const _PlaylistsTab(),
+              _PlaylistsTab(
+                playerState: widget.playerState,
+                libraryState: widget.libraryState,
+                playlistsState: widget.playlistsState,
+                onTrackTap: widget.onTrackTap,
+              ),
             ],
           ),
         ),
@@ -126,13 +138,27 @@ class _SongsTab extends StatelessWidget {
   const _SongsTab({
     required this.playerState,
     required this.libraryState,
+    required this.favoritesState,
+    required this.playlistsState,
     required this.onTrackTap,
   });
 
   final PlayerState playerState;
   final LocalLibraryState libraryState;
+  final FavoritesState favoritesState;
+  final PlaylistsState playlistsState;
   final Future<void> Function(Track track, {List<Track>? queueContext})
   onTrackTap;
+
+  void _showActions(BuildContext context, Track track) {
+    showTrackActionsSheet(
+      context: context,
+      track: track,
+      playlistsState: playlistsState,
+      favoritesState: favoritesState,
+      playerState: playerState,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -229,9 +255,7 @@ class _SongsTab extends StatelessWidget {
                     track: t,
                     isPlaying: playerState.currentTrack?.id == t.id,
                     onTap: () => onTrackTap(t, queueContext: localSongs),
-                    onMore: () => ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Coming soon')),
-                    ),
+                    onMore: () => _showActions(context, t),
                   ),
                 ),
               Padding(
@@ -259,9 +283,7 @@ class _SongsTab extends StatelessWidget {
                   track: t,
                   isPlaying: playerState.currentTrack?.id == t.id,
                   onTap: () => onTrackTap(t),
-                  onMore: () => ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('Coming soon'))),
+                  onMore: () => _showActions(context, t),
                 ),
               ),
             ],
@@ -563,57 +585,144 @@ Track resolveFavoriteForDisplay(FavoriteRecord record, List<Track> localSongs) {
 }
 
 class _PlaylistsTab extends StatelessWidget {
-  const _PlaylistsTab();
+  const _PlaylistsTab({
+    required this.playerState,
+    required this.libraryState,
+    required this.playlistsState,
+    required this.onTrackTap,
+  });
+
+  final PlayerState playerState;
+  final LocalLibraryState libraryState;
+  final PlaylistsState playlistsState;
+  final Future<void> Function(Track track, {List<Track>? queueContext})
+  onTrackTap;
+
+  Future<void> _createPlaylist(BuildContext context) async {
+    final name = await showPlaylistNameDialog(
+      context,
+      title: 'New playlist',
+      confirmLabel: 'Create',
+    );
+    if (name == null || !context.mounted) return;
+
+    final id = await playlistsState.create(
+      name,
+      paletteIndex: playlistsState.playlists.length % 8,
+    );
+    if (!context.mounted) return;
+    if (id == null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(playlistsState.error ?? 'Could not create playlist.'),
+          ),
+        );
+      return;
+    }
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('Created “$name”')));
+    _openDetail(context, id);
+  }
+
+  void _openDetail(BuildContext context, String playlistId) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PlaylistDetailScreen(
+          playlistId: playlistId,
+          playlistsState: playlistsState,
+          libraryState: libraryState,
+          playerState: playerState,
+          onTrackTap: onTrackTap,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        ListView.builder(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
-          ),
-          itemCount: MockData.playlists.length,
-          itemBuilder: (context, i) {
-            final pl = MockData.playlists[i];
-            return ListTile(
-              contentPadding: const EdgeInsets.symmetric(vertical: 4),
-              leading: ClipRRect(
-                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                child: MeloraArtwork(
-                  paletteIndex: pl.paletteIndex,
-                  size: 52,
-                  borderRadius: AppSpacing.radiusSm,
-                ),
-              ),
-              title: Text(pl.name, style: AppTextStyles.titleMedium),
-              subtitle: Text(
-                '${pl.trackCount} tracks',
-                style: AppTextStyles.bodyMedium,
-              ),
-              trailing: const Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.textDisabled,
-              ),
-              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Playlist: ${pl.name} — coming soon')),
-              ),
-            );
-          },
-        ),
-        Positioned(
-          right: AppSpacing.md,
-          bottom: AppSpacing.lg,
-          child: FloatingActionButton(
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Create playlist — coming soon')),
+    return ListenableBuilder(
+      listenable: playlistsState,
+      builder: (context, _) {
+        Widget body;
+        if (playlistsState.loading && !playlistsState.loadedOnce) {
+          body = const Center(child: CircularProgressIndicator());
+        } else if (playlistsState.loadedOnce &&
+            playlistsState.error != null &&
+            playlistsState.isEmpty) {
+          body = MeloraEmptyState(
+            icon: Icons.error_outline_rounded,
+            title: 'Couldn’t load playlists',
+            subtitle: playlistsState.error,
+            actionLabel: 'Retry',
+            action: () => playlistsState.load(),
+          );
+        } else if (playlistsState.isEmpty) {
+          body = MeloraEmptyState(
+            icon: Icons.queue_music_rounded,
+            title: 'No playlists yet',
+            subtitle: 'Create a playlist to organize your music.',
+            actionLabel: 'Create playlist',
+            action: playlistsState.saving
+                ? null
+                : () => _createPlaylist(context),
+          );
+        } else {
+          final playlists = playlistsState.playlists;
+          body = ListView.builder(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
             ),
-            backgroundColor: AppColors.accentViolet,
-            child: const Icon(Icons.add_rounded, color: Colors.white),
-          ),
-        ),
-      ],
+            itemCount: playlists.length,
+            itemBuilder: (context, i) {
+              final pl = playlists[i];
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  child: MeloraArtwork(
+                    paletteIndex: pl.paletteIndex,
+                    size: 52,
+                    borderRadius: AppSpacing.radiusSm,
+                  ),
+                ),
+                title: Text(pl.name, style: AppTextStyles.titleMedium),
+                subtitle: Text(
+                  '${pl.trackCount} '
+                  '${pl.trackCount == 1 ? 'track' : 'tracks'}',
+                  style: AppTextStyles.bodyMedium,
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.textDisabled,
+                ),
+                onTap: () => _openDetail(context, pl.id),
+              );
+            },
+          );
+        }
+
+        return Stack(
+          children: [
+            body,
+            Positioned(
+              right: AppSpacing.md,
+              bottom: AppSpacing.lg,
+              child: FloatingActionButton(
+                onPressed: playlistsState.saving
+                    ? null
+                    : () => _createPlaylist(context),
+                backgroundColor: AppColors.accentViolet,
+                child: const Icon(Icons.add_rounded, color: Colors.white),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

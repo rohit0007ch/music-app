@@ -1,24 +1,46 @@
 import 'package:flutter/material.dart';
 import 'package:melora_music/data/mock/mock_data.dart';
-import 'package:melora_music/data/models/playlist.dart';
+import 'package:melora_music/data/models/playlist_record.dart';
 import 'package:melora_music/data/models/track.dart';
+import 'package:melora_music/screens/library/playlist_detail_screen.dart';
 import 'package:melora_music/shared/widgets/melora_artwork.dart';
 import 'package:melora_music/shared/widgets/melora_card.dart';
 import 'package:melora_music/shared/widgets/melora_track_tile.dart';
 import 'package:melora_music/theme/app_colors.dart';
 import 'package:melora_music/theme/app_spacing.dart';
 import 'package:melora_music/theme/app_text_styles.dart';
+import 'package:melora_music/viewmodels/local_library_state.dart';
 import 'package:melora_music/viewmodels/player_state.dart';
+import 'package:melora_music/viewmodels/playlists_state.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({
     super.key,
     required this.playerState,
+    required this.libraryState,
+    required this.playlistsState,
     required this.onTrackTap,
   });
 
   final PlayerState playerState;
-  final void Function(Track) onTrackTap;
+  final LocalLibraryState libraryState;
+  final PlaylistsState playlistsState;
+  final Future<void> Function(Track track, {List<Track>? queueContext})
+  onTrackTap;
+
+  void _openPlaylist(BuildContext context, String playlistId) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PlaylistDetailScreen(
+          playlistId: playlistId,
+          playlistsState: playlistsState,
+          libraryState: libraryState,
+          playerState: playerState,
+          onTrackTap: onTrackTap,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,17 +61,19 @@ class HomeScreen extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Good Evening 👋', style: AppTextStyles.bodyMedium),
-                    Text(
-                      'What are you\nfeeling today?',
-                      style: AppTextStyles.displayMedium,
-                    ),
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Good Evening 👋', style: AppTextStyles.bodyMedium),
+                      Text(
+                        'What are you\nfeeling today?',
+                        style: AppTextStyles.displayMedium,
+                      ),
+                    ],
+                  ),
                 ),
-                const Spacer(),
+                const SizedBox(width: AppSpacing.md),
                 Container(
                   width: 44,
                   height: 44,
@@ -98,7 +122,7 @@ class HomeScreen extends StatelessWidget {
         ),
         SliverToBoxAdapter(
           child: SizedBox(
-            height: AppSpacing.artworkCardSize + 52,
+            height: AppSpacing.artworkCardSize + 56,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
@@ -112,7 +136,7 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
 
-        // Featured Playlists
+        // Your Playlists
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
@@ -121,23 +145,42 @@ class HomeScreen extends StatelessWidget {
               AppSpacing.md,
               AppSpacing.sm,
             ),
-            child: Text(
-              'Featured Playlists',
-              style: AppTextStyles.headlineLarge,
-            ),
+            child: Text('Your Playlists', style: AppTextStyles.headlineLarge),
           ),
         ),
         SliverToBoxAdapter(
-          child: SizedBox(
-            height: AppSpacing.artworkCardSize + 52,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              itemCount: MockData.playlists.length,
-              separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.md),
-              itemBuilder: (context, i) =>
-                  _PlaylistCard(playlist: MockData.playlists[i]),
-            ),
+          child: ListenableBuilder(
+            listenable: playlistsState,
+            builder: (context, _) {
+              final playlists = playlistsState.playlists;
+              if (playlists.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                  ),
+                  child: Text(
+                    'Create playlists in Library to see them here.',
+                    style: AppTextStyles.bodyMedium,
+                  ),
+                );
+              }
+              return SizedBox(
+                height: AppSpacing.artworkCardSize + 72,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                  ),
+                  itemCount: playlists.length,
+                  separatorBuilder: (_, _) =>
+                      const SizedBox(width: AppSpacing.md),
+                  itemBuilder: (context, i) => _PlaylistCard(
+                    playlist: playlists[i],
+                    onTap: () => _openPlaylist(context, playlists[i].id),
+                  ),
+                ),
+              );
+            },
           ),
         ),
 
@@ -338,17 +381,19 @@ class _ArtworkCard extends StatelessWidget {
 }
 
 class _PlaylistCard extends StatelessWidget {
-  const _PlaylistCard({required this.playlist});
-  final Playlist playlist;
+  const _PlaylistCard({required this.playlist, required this.onTap});
+  final PlaylistRecord playlist;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return MeloraCard(
       padding: EdgeInsets.zero,
-      onTap: () {},
+      onTap: onTap,
       child: SizedBox(
         width: AppSpacing.artworkCardSize,
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
@@ -364,6 +409,7 @@ class _PlaylistCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(AppSpacing.sm),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -373,8 +419,11 @@ class _PlaylistCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    '${playlist.trackCount} tracks',
+                    '${playlist.trackCount} '
+                    '${playlist.trackCount == 1 ? 'track' : 'tracks'}',
                     style: AppTextStyles.bodyMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),

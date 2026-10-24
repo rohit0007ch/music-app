@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:melora_music/data/models/playlist.dart';
 import 'package:melora_music/data/models/track.dart';
 
@@ -270,9 +269,8 @@ class PlaylistRecord {
 
 /// Resolves a playlist track against the current local library scan by stable ID.
 ///
-/// Intended for UI/playback integration (4B.3). Missing local files stay in the
-/// playlist but return a non-playable [Track] (`localUri == null`).
-@visibleForTesting
+/// Missing local files stay in the playlist but return a non-playable [Track]
+/// (`localUri == null`). Online snapshots keep stored metadata for offline list.
 Track resolvePlaylistTrackForDisplay(
   PlaylistTrackRecord record,
   List<Track> localSongs,

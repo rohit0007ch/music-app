@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:melora_music/data/mock/mock_data.dart';
 import 'package:melora_music/data/models/track.dart';
+import 'package:melora_music/shared/widgets/add_to_playlist_sheet.dart';
+import 'package:melora_music/shared/widgets/favorite_track_action.dart';
 import 'package:melora_music/shared/widgets/melora_chip.dart';
 import 'package:melora_music/shared/widgets/melora_empty_state.dart';
 import 'package:melora_music/shared/widgets/melora_search_bar.dart';
@@ -10,17 +12,23 @@ import 'package:melora_music/theme/app_colors.dart';
 import 'package:melora_music/theme/app_spacing.dart';
 import 'package:melora_music/theme/app_text_styles.dart';
 import 'package:melora_music/viewmodels/discover_catalog_state.dart';
+import 'package:melora_music/viewmodels/favorites_state.dart';
 import 'package:melora_music/viewmodels/player_state.dart';
+import 'package:melora_music/viewmodels/playlists_state.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({
     super.key,
     required this.playerState,
+    required this.favoritesState,
+    required this.playlistsState,
     required this.onTrackTap,
     this.catalogState,
   });
 
   final PlayerState playerState;
+  final FavoritesState favoritesState;
+  final PlaylistsState playlistsState;
   final Future<void> Function(Track track, {List<Track>? queueContext})
   onTrackTap;
 
@@ -132,6 +140,32 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   ),
                 ),
               ],
+              const SizedBox(height: AppSpacing.md),
+              FavoriteToggleTile(
+                track: track,
+                favoritesState: widget.favoritesState,
+                playerState: widget.playerState,
+                onCompleted: () => Navigator.of(context).pop(),
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(
+                  Icons.playlist_add_rounded,
+                  color: AppColors.accentViolet,
+                ),
+                title: Text(
+                  'Add to playlist',
+                  style: AppTextStyles.titleMedium,
+                ),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  showAddToPlaylistSheet(
+                    context: this.context,
+                    track: track,
+                    playlistsState: widget.playlistsState,
+                  );
+                },
+              ),
             ],
           ),
         );
@@ -333,13 +367,28 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         delegate: SliverChildBuilderDelegate((context, i) {
           final t = tracks[i];
           return ListenableBuilder(
-            listenable: widget.playerState,
-            builder: (context, _) => MeloraTrackTile(
-              track: t,
-              isPlaying: widget.playerState.currentTrack?.id == t.id,
-              onTap: () => widget.onTrackTap(t, queueContext: tracks),
-              onMore: () => _showTrackInfo(t),
-            ),
+            listenable: Listenable.merge([
+              widget.playerState,
+              widget.favoritesState,
+            ]),
+            builder: (context, _) {
+              final display = t.copyWith(
+                isFavourite: widget.favoritesState.isFavorite(t.id),
+              );
+              return MeloraTrackTile(
+                track: display,
+                isPlaying: widget.playerState.currentTrack?.id == t.id,
+                onTap: () => widget.onTrackTap(t, queueContext: tracks),
+                onMore: () => _showTrackInfo(t),
+                trailing: widget.favoritesState.isFavorite(t.id)
+                    ? const Icon(
+                        Icons.favorite_rounded,
+                        color: AppColors.accentAmber,
+                        size: 18,
+                      )
+                    : null,
+              );
+            },
           );
         }, childCount: tracks.length),
       ),
