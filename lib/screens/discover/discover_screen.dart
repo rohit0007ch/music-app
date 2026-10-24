@@ -208,7 +208,9 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 ),
               ),
 
-              // Genre chips
+              // Genre chips stay available while filtered so users can jump
+              // to a tag browse or return to popular via "All".
+              // Mood grid + Trending heading hide — they compete with results.
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -280,7 +282,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       AppSpacing.sm,
                     ),
                     child: Text(
-                      _catalog.activeQuery.isEmpty ? 'Trending Now' : 'Results',
+                      'Trending Now',
                       style: AppTextStyles.headlineLarge,
                     ),
                   ),

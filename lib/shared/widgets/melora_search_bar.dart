@@ -32,6 +32,8 @@ class MeloraSearchBar extends StatelessWidget {
         onSubmitted: onSubmitted,
         textInputAction: TextInputAction.search,
         style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+        // Hint doubles as the accessible name; avoid wrapping in Semantics
+        // that would announce the same label twice.
         decoration: InputDecoration(
           hintText: hintText,
           hintStyle: const TextStyle(
@@ -45,6 +47,7 @@ class MeloraSearchBar extends StatelessWidget {
           ),
           suffixIcon: controller.text.isNotEmpty
               ? IconButton(
+                  tooltip: 'Clear search',
                   icon: const Icon(
                     Icons.close_rounded,
                     color: AppColors.textDisabled,
