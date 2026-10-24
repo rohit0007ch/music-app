@@ -6,6 +6,7 @@ import 'package:melora_music/screens/library/playlist_detail_screen.dart';
 import 'package:melora_music/shared/widgets/add_to_playlist_sheet.dart';
 import 'package:melora_music/shared/widgets/melora_artwork.dart';
 import 'package:melora_music/shared/widgets/melora_empty_state.dart';
+import 'package:melora_music/shared/widgets/melora_search_bar.dart';
 import 'package:melora_music/shared/widgets/melora_track_tile.dart';
 import 'package:melora_music/theme/app_colors.dart';
 import 'package:melora_music/theme/app_spacing.dart';
@@ -14,6 +15,20 @@ import 'package:melora_music/viewmodels/favorites_state.dart';
 import 'package:melora_music/viewmodels/local_library_state.dart';
 import 'package:melora_music/viewmodels/player_state.dart';
 import 'package:melora_music/viewmodels/playlists_state.dart';
+
+/// Case-insensitive title / artist / album filter for Library Songs.
+@visibleForTesting
+List<Track> filterTracksByQuery(List<Track> tracks, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return List<Track>.from(tracks);
+  return [
+    for (final t in tracks)
+      if (t.title.toLowerCase().contains(q) ||
+          t.artist.toLowerCase().contains(q) ||
+          t.album.toLowerCase().contains(q))
+        t,
+  ];
+}
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({
@@ -134,7 +149,7 @@ class _LibraryScreenState extends State<LibraryScreen>
   }
 }
 
-class _SongsTab extends StatelessWidget {
+class _SongsTab extends StatefulWidget {
   const _SongsTab({
     required this.playerState,
     required this.libraryState,
@@ -150,23 +165,46 @@ class _SongsTab extends StatelessWidget {
   final Future<void> Function(Track track, {List<Track>? queueContext})
   onTrackTap;
 
+  @override
+  State<_SongsTab> createState() => _SongsTabState();
+}
+
+class _SongsTabState extends State<_SongsTab> {
+  final _queryController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  void _setQuery(String value) {
+    if (value == _query) return;
+    setState(() => _query = value);
+  }
+
   void _showActions(BuildContext context, Track track) {
     showTrackActionsSheet(
       context: context,
       track: track,
-      playlistsState: playlistsState,
-      favoritesState: favoritesState,
-      playerState: playerState,
+      playlistsState: widget.playlistsState,
+      favoritesState: widget.favoritesState,
+      playerState: widget.playerState,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([playerState, libraryState]),
+      listenable: Listenable.merge([widget.playerState, widget.libraryState]),
       builder: (context, _) {
+        final libraryState = widget.libraryState;
+        final playerState = widget.playerState;
         final localSongs = libraryState.songs;
-        final demos = MockData.tracks;
+        final filteredLocal = filterTracksByQuery(localSongs, _query);
+        final demos = filterTracksByQuery(MockData.tracks, _query);
+        final hasActiveQuery = _query.trim().isNotEmpty;
 
         return RefreshIndicator(
           color: AppColors.accentViolet,
@@ -174,6 +212,20 @@ class _SongsTab extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
             children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  AppSpacing.sm,
+                  AppSpacing.md,
+                  AppSpacing.sm,
+                ),
+                child: MeloraSearchBar(
+                  controller: _queryController,
+                  hintText: 'Search songs, artists, albums…',
+                  onChanged: _setQuery,
+                  onSubmitted: _setQuery,
+                ),
+              ),
               _LocalLibraryHeader(libraryState: libraryState),
               if (libraryState.loading)
                 const Padding(
@@ -249,43 +301,62 @@ class _SongsTab extends StatelessWidget {
                     subtitle: 'Add music to this device, then pull to refresh.',
                   ),
                 )
+              else if (hasActiveQuery && filteredLocal.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.sm,
+                    AppSpacing.md,
+                    AppSpacing.md,
+                  ),
+                  child: MeloraEmptyState(
+                    icon: Icons.search_off_rounded,
+                    title: 'No matching songs',
+                    subtitle: 'Try a different title, artist, or album.',
+                  ),
+                )
               else
-                ...localSongs.map(
+                ...filteredLocal.map(
                   (t) => MeloraTrackTile(
                     track: t,
                     isPlaying: playerState.currentTrack?.id == t.id,
-                    onTap: () => onTrackTap(t, queueContext: localSongs),
+                    onTap: () =>
+                        widget.onTrackTap(t, queueContext: filteredLocal),
                     onMore: () => _showActions(context, t),
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.md,
-                  AppSpacing.lg,
-                  AppSpacing.md,
-                  AppSpacing.sm,
+              if (demos.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.md,
+                    AppSpacing.lg,
+                    AppSpacing.md,
+                    AppSpacing.sm,
+                  ),
+                  child: Text(
+                    'Demo catalog',
+                    style: AppTextStyles.headlineMedium,
+                  ),
                 ),
-                child: Text(
-                  'Demo catalog',
-                  style: AppTextStyles.headlineMedium,
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                  ),
+                  child: Text(
+                    'Preview UI only — these tracks are not playable.',
+                    style: AppTextStyles.bodyMedium,
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                child: Text(
-                  'Preview UI only — these tracks are not playable.',
-                  style: AppTextStyles.bodyMedium,
+                const SizedBox(height: AppSpacing.sm),
+                ...demos.map(
+                  (t) => MeloraTrackTile(
+                    track: t,
+                    isPlaying: playerState.currentTrack?.id == t.id,
+                    onTap: () => widget.onTrackTap(t),
+                    onMore: () => _showActions(context, t),
+                  ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              ...demos.map(
-                (t) => MeloraTrackTile(
-                  track: t,
-                  isPlaying: playerState.currentTrack?.id == t.id,
-                  onTap: () => onTrackTap(t),
-                  onMore: () => _showActions(context, t),
-                ),
-              ),
+              ],
             ],
           ),
         );
