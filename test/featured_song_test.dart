@@ -271,12 +271,14 @@ void main() {
       expect(find.text('FEATURED SONG'), findsOneWidget);
       expect(find.text('Dinesh Dalla'), findsOneWidget);
       expect(find.text('Local Song'), findsOneWidget);
+      expect(find.text('Ready to play'), findsOneWidget);
 
       await player.playTrack(FeaturedSong.track);
       player.debugSetCurrentTrack(FeaturedSong.track, isPlaying: true);
       await tester.pump();
 
       expect(find.text('Pause'), findsOneWidget);
+      expect(find.text('Now playing'), findsOneWidget);
 
       player.debugSetCurrentTrack(FeaturedSong.track, isPlaying: false);
       await tester.pump();
