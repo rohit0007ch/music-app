@@ -38,6 +38,7 @@ class MeloraPlayerState extends ChangeNotifier {
   final AudioEngine _engine;
   final DateTime Function() _clock;
   final Random _random = Random();
+  double _playbackSpeed = 1.0;
 
   Track? _currentTrack;
   bool _isPlaying = false;
@@ -112,6 +113,9 @@ class MeloraPlayerState extends ChangeNotifier {
 
   /// Transient UX message (e.g. demo track not playable).
   String? get userMessage => _userMessage;
+
+  /// Current playback speed (0.5–2.0). Default 1.0.
+  double get playbackSpeed => _playbackSpeed;
 
   /// Returns and clears [userMessage], if any.
   String? takeUserMessage() {
@@ -231,6 +235,13 @@ class MeloraPlayerState extends ChangeNotifier {
     _progress = value.clamp(0.0, 1.0);
     notifyListeners();
     await _engine.seek(target);
+  }
+
+  /// Sets the playback speed on the engine. Valid range 0.5–2.0.
+  Future<void> setPlaybackSpeed(double speed) async {
+    _playbackSpeed = speed.clamp(0.5, 2.0);
+    notifyListeners();
+    await _engine.setSpeed(_playbackSpeed);
   }
 
   void toggleShuffle() {

@@ -53,6 +53,10 @@ class AudioEngine {
 
   Future<void> stop() => _player.stop();
 
+  /// Sets the playback speed. Clamped to 0.5–2.0.
+  Future<void> setSpeed(double speed) =>
+      _player.setSpeed(speed.clamp(0.5, 2.0));
+
   void dispose() => _player.dispose();
 
   // ── URI resolution (testable without a live player) ───────────────────────
