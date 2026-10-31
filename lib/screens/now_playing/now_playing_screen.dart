@@ -45,12 +45,26 @@ class NowPlayingScreen extends StatelessWidget {
     builder: (_) => SleepTimerDialog(playerState: playerState),
   );
 
-  void _showEqualizer(BuildContext context) => showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => const EqualizerSheet(),
-  );
+  void _showEqualizer(BuildContext context) {
+    // Show the prototype sheet with a clear disclaimer so users understand
+    // the sliders are visual only and do not affect audio output.
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Equalizer — visual preview only. Audio output is not affected.',
+          ),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const EqualizerSheet(),
+    );
+  }
 
   Future<void> _onFavouritePressed(BuildContext context) async {
     final track = playerState.currentTrack;
