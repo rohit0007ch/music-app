@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:melora_music/screens/settings/settings_screen.dart';
 import 'package:melora_music/theme/app_colors.dart';
 import 'package:melora_music/theme/app_spacing.dart';
 import 'package:melora_music/theme/app_text_styles.dart';
+import 'package:melora_music/viewmodels/settings_state.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.settingsState});
+
+  /// Optional; when provided, the Settings tile navigates to [SettingsScreen].
+  final SettingsState? settingsState;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -84,6 +89,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
 
         _section('Account'),
+        _tile(
+          icon: Icons.settings_rounded,
+          title: 'Settings',
+          onTap: () {
+            final state = widget.settingsState;
+            if (state != null) {
+              Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => SettingsScreen(settingsState: state),
+                ),
+              );
+            }
+          },
+        ),
         _tile(icon: Icons.manage_accounts_rounded, title: 'Account Details'),
         _tile(icon: Icons.lock_rounded, title: 'Privacy & Security'),
         _tile(
@@ -185,6 +205,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required String title,
     Color? titleColor,
     Widget? trailing,
+    VoidCallback? onTap,
   }) => SliverToBoxAdapter(
     child: ListTile(
       leading: Icon(
@@ -205,9 +226,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             color: AppColors.textDisabled,
             size: 20,
           ),
-      onTap: () => ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('$title — coming soon'))),
+      onTap:
+          onTap ??
+          () => ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('$title — coming soon'))),
     ),
   );
 }

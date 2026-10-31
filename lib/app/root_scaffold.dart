@@ -12,6 +12,7 @@ import 'package:melora_music/viewmodels/favorites_state.dart';
 import 'package:melora_music/viewmodels/local_library_state.dart';
 import 'package:melora_music/viewmodels/player_state.dart';
 import 'package:melora_music/viewmodels/playlists_state.dart';
+import 'package:melora_music/viewmodels/settings_state.dart';
 
 /// Root scaffold — owns bottom nav, mini-player, and the active screen.
 class RootScaffold extends StatefulWidget {
@@ -40,6 +41,7 @@ class _RootScaffoldState extends State<RootScaffold>
   late final LocalLibraryState _libraryState;
   late final FavoritesState _favoritesState;
   late final PlaylistsState _playlistsState;
+  late final SettingsState _settingsState;
   late final bool _ownsPlayer;
   late final bool _ownsLibrary;
   late final bool _ownsFavorites;
@@ -57,6 +59,8 @@ class _RootScaffoldState extends State<RootScaffold>
     _libraryState = widget.libraryState ?? LocalLibraryState();
     _favoritesState = widget.favoritesState ?? FavoritesState();
     _playlistsState = widget.playlistsState ?? PlaylistsState();
+    // SettingsState always created here; no widget-level override needed.
+    _settingsState = SettingsState(playerState: _playerState);
 
     _favoritesState.addListener(_syncFavouriteFlags);
     // Fire-and-forget; Favourites tab / heart react via listeners.
@@ -66,6 +70,8 @@ class _RootScaffoldState extends State<RootScaffold>
     });
     // Fire-and-forget; Playlists tab reacts via listeners.
     _playlistsState.load();
+    // Fire-and-forget; loads persisted speed and applies to player.
+    _settingsState.load();
   }
 
   @override
@@ -87,6 +93,7 @@ class _RootScaffoldState extends State<RootScaffold>
     if (_ownsLibrary) _libraryState.dispose();
     if (_ownsFavorites) _favoritesState.dispose();
     if (_ownsPlaylists) _playlistsState.dispose();
+    _settingsState.dispose();
     super.dispose();
   }
 
@@ -174,7 +181,7 @@ class _RootScaffoldState extends State<RootScaffold>
               playerState: _playerState,
               onTrackTap: (track) => _onTrackTap(track),
             ),
-            const ProfileScreen(),
+            ProfileScreen(settingsState: _settingsState),
           ],
         ),
       ),
