@@ -1,5 +1,7 @@
-# Uncomment this line to define a global platform for your project
-platform :ios, '13.0'
+# Minimum iOS version aligned with the Xcode SDK available on this machine.
+# just_audio_background and audio_session require iOS 13+; Xcode 17.x
+# dropped support for deployment targets below 15.0 in the Pods project.
+platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -40,6 +42,12 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     target.build_configurations.each do |config|
+      # Ensure no pod target undercuts our platform minimum.
+      min_version = '15.0'
+      existing = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+      if existing.nil? || existing.to_f < min_version.to_f
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_version
+      end
       config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
         '$(inherited)',
         'PERMISSION_MEDIA_LIBRARY=1',
